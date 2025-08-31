@@ -5,3 +5,9 @@ impl Board {
         Board {}
     }
 }
+
+impl Clone for Board {
+    fn clone(&self) -> Self {
+        Self {}
+    }
+}

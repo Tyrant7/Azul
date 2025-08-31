@@ -11,3 +11,11 @@ impl Bowl {
         Bowl { tiles }
     }
 }
+
+impl Clone for Bowl {
+    fn clone(&self) -> Self {
+        Self {
+            tiles: self.tiles.clone(),
+        }
+    }
+}
