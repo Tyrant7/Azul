@@ -10,8 +10,9 @@ impl<T> Bag<T> {
         Bag { items }
     }
 
-    pub fn shuffle(&mut self) {
-        self.items.shuffle(&mut rng());
+    pub fn restock(&mut self, mut items: Vec<T>) {
+        items.shuffle(&mut rng());
+        self.items = items;
     }
 }
 

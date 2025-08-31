@@ -1,14 +1,16 @@
-const BOWL_CAPACITY: usize = 4;
-
 pub type Tile = u32;
 
 pub struct Bowl {
-    tiles: [Tile; BOWL_CAPACITY],
+    tiles: Vec<Tile>,
 }
 
 impl Bowl {
-    pub fn new(tiles: [Tile; BOWL_CAPACITY]) -> Bowl {
-        Bowl { tiles }
+    pub fn new() -> Bowl {
+        Bowl { tiles: Vec::new() }
+    }
+
+    pub fn fill(&mut self, tiles: Vec<Tile>) {
+        self.tiles = tiles;
     }
 }
 
