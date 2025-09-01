@@ -13,4 +13,7 @@ use crate::gamestate::GameState;
 
 fn main() {
     let mut gamestate = GameState::new(2);
+    gamestate.setup();
+
+    println!("{:#?}", gamestate);
 }

@@ -1,3 +1,5 @@
+use std::ffi::os_str::Display;
+
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
@@ -7,6 +9,7 @@ use crate::{
 const TILE_TYPES: usize = 4;
 const TILES_PER_TYPE: usize = 20;
 
+#[derive(Debug)]
 pub struct GameState {
     boards: Vec<Board>,
     bowls: Vec<Bowl>,
@@ -36,16 +39,22 @@ impl GameState {
         }
     }
 
-    fn get_tiles_not_in_play(&self) -> Vec<Tile> {
-        let mut tiles = Vec::new();
-        for t in 0..5 {
-            let in_play = self.tiles_in_play.iter().filter(|&&x| x == t).count();
-            tiles.append(&mut vec![t as Tile; 20 - in_play]);
+    pub fn setup(&mut self) {
+        let (bowls, bag) = (&mut self.bowls, &mut self.bag);
+        for bowl in bowls.iter_mut() {
+            let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
+            if next.len() < BOWL_CAPACITY {
+                // Refill the bag with all tiles currently not in play
+                let mut tiles = Vec::new();
+                for t in 0..5 {
+                    let in_play = self.tiles_in_play.iter().filter(|&&x| x == t).count();
+                    tiles.append(&mut vec![t as Tile; 20 - in_play]);
+                }
+                bag.restock(tiles);
+            }
+            next.extend(bag.take(BOWL_CAPACITY - next.len()));
+            bowl.fill(next.clone());
+            self.tiles_in_play.append(&mut next);
         }
-        tiles
-    }
-
-    fn restock_bag(&mut self) {
-        self.bag.restock(self.get_tiles_not_in_play());
     }
 }

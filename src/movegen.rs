@@ -1,5 +1,6 @@
 pub type Tile = u32;
 
+#[derive(Debug)]
 pub struct Bowl {
     tiles: Vec<Tile>,
 }

@@ -1,5 +1,6 @@
 use rand::{rng, seq::SliceRandom};
 
+#[derive(Debug)]
 pub struct Bag<T> {
     items: Vec<T>,
 }
