@@ -44,4 +44,5 @@ pub struct Move {
     pub row: usize,
 }
 
+#[derive(Debug)]
 pub struct IllegalMoveError;
