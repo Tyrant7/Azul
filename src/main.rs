@@ -2,6 +2,8 @@
 
 const BOWL_CAPACITY: usize = 4;
 
+use std::io;
+
 mod bag;
 mod board;
 mod gamestate;
@@ -16,4 +18,11 @@ fn main() {
     gamestate.setup();
 
     println!("{:?}", gamestate);
+
+    loop {
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read input");
+    }
 }

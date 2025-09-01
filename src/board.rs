@@ -32,13 +32,15 @@ impl Board {
 
         // Add tiles to that row, overflowing extra to the penalty section
         let row_capacity = row_idx + 1;
-        for i in 0..tile_count {
-            if i < row_capacity {
-                row[i] = Some(tile_type);
-            } else {
-                self.add_penalty_tile();
-            }
+        for row in row.iter_mut().take(tile_count.min(row_capacity)) {
+            *row = Some(tile_type);
         }
+
+        let overflow = tile_count.saturating_sub(row_capacity);
+        for _ in 0..overflow {
+            self.add_penalty_tile();
+        }
+
         Ok(())
     }
 

@@ -42,6 +42,7 @@ impl GameState {
     }
 
     pub fn setup(&mut self) {
+        // Fill each bowl, marking the tiles used as being in play
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
         for bowl in bowls.iter_mut() {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
@@ -72,8 +73,17 @@ impl GameState {
         }
 
         // Put the tiles into the appropriate row
-        let active_board = self.boards.get_mut(self.active_player);
+        let active_board = self
+            .boards
+            .get_mut(self.active_player)
+            .expect("Invalid player");
+        active_board.add_tiles(choice.tile_type, tiles.len(), choice.row);
 
+        // Cycle to the next player's turn
+        self.active_player += 1;
+        if self.active_player >= self.boards.len() {
+            self.active_player = 0;
+        }
         Ok(())
     }
 }
