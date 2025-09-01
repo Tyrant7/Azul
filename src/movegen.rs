@@ -36,3 +36,12 @@ impl Clone for Bowl {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct Move {
+    pub bowl: usize,
+    pub tile_type: Tile,
+    pub row: usize,
+}
+
+pub struct IllegalMoveError;
