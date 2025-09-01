@@ -15,5 +15,5 @@ fn main() {
     let mut gamestate = GameState::new(2);
     gamestate.setup();
 
-    println!("{:#?}", gamestate);
+    println!("{:?}", gamestate);
 }

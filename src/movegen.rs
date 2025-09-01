@@ -13,6 +13,20 @@ impl Bowl {
     pub fn fill(&mut self, tiles: Vec<Tile>) {
         self.tiles = tiles;
     }
+
+    pub fn take_tiles(&mut self, tile_type: Tile) -> Vec<Tile> {
+        let mut take = Vec::new();
+        let mut keep = Vec::new();
+        for &tile in self.tiles.iter() {
+            if tile == tile_type {
+                take.push(tile);
+            } else {
+                keep.push(tile);
+            }
+        }
+        self.tiles = keep;
+        take
+    }
 }
 
 impl Clone for Bowl {

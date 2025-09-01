@@ -57,4 +57,13 @@ impl GameState {
             self.tiles_in_play.append(&mut next);
         }
     }
+
+    pub fn select_tiles(mut self, player_id: usize, bowl: usize, tile_type: Tile, row: usize) {
+        let bowl = self.bowls.get_mut(bowl).expect("Invalid bowl");
+        let tiles = bowl.take_tiles(tile_type);
+
+        println!("tiles: {:?}", tiles);
+
+        // Put the tiles into that row
+    }
 }
