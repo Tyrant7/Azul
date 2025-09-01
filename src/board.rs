@@ -7,6 +7,7 @@ pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     penalties: usize,
+    score: usize,
 }
 
 impl Board {
@@ -15,6 +16,7 @@ impl Board {
             holds: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
             placed: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
             penalties: 0,
+            score: 0,
         }
     }
 
@@ -44,5 +46,33 @@ impl Board {
         }
 
         Ok(())
+    }
+
+    pub fn place_holds(&mut self) {
+        for (i, row) in self.holds.iter().enumerate() {
+            let tiles_in_row = row.iter().filter(|tile| tile.is_some()).count();
+
+            // We have enough tiles to place in this row, let's determine the position
+            if tiles_in_row > i {
+                let tile_type = row[0].unwrap();
+                let tile_col = Board::get_tile_place_col(tile_type, i);
+                *self
+                    .placed
+                    .get_mut(i)
+                    .expect("Invalid row")
+                    .get_mut(tile_col)
+                    .expect("Invalid column") = Some(tile_type);
+
+                // TODO: Score newly placed tile
+            }
+        }
+
+        // Let's also apply our penalties
+        self.score -= self.penalties;
+        self.penalties = 0;
+    }
+
+    fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
+        todo!()
     }
 }

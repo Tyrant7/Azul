@@ -1,5 +1,3 @@
-use std::ffi::os_str::Display;
-
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
@@ -15,7 +13,6 @@ pub struct GameState {
     boards: Vec<Board>,
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
-    tiles_in_play: Vec<Tile>,
 }
 
 fn get_bowl_count(players: usize) -> usize {
@@ -37,7 +34,6 @@ impl GameState {
             boards: vec![Board::new(); players],
             bowls: vec![Bowl::new(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
-            tiles_in_play: Vec::new(),
         }
     }
 
@@ -48,16 +44,10 @@ impl GameState {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
                 // Refill the bag with all tiles currently not in play
-                let mut tiles = Vec::new();
-                for t in 0..5 {
-                    let in_play = self.tiles_in_play.iter().filter(|&&x| x == t).count();
-                    tiles.append(&mut vec![t as Tile; 20 - in_play]);
-                }
-                bag.restock(tiles);
+                // TODO
             }
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
             bowl.fill(next.clone());
-            self.tiles_in_play.append(&mut next);
         }
     }
 
