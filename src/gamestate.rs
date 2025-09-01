@@ -77,7 +77,7 @@ impl GameState {
             .boards
             .get_mut(self.active_player)
             .expect("Invalid player");
-        active_board.add_tiles(choice.tile_type, tiles.len(), choice.row);
+        active_board.hold_tiles(choice.tile_type, tiles.len(), choice.row)?;
 
         // Cycle to the next player's turn
         self.active_player += 1;

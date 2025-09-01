@@ -18,7 +18,7 @@ impl Board {
         }
     }
 
-    pub fn add_tiles(
+    pub fn hold_tiles(
         &mut self,
         tile_type: Tile,
         tile_count: usize,
