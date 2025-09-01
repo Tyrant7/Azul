@@ -18,7 +18,7 @@ fn main() {
     let mut gamestate = GameState::new(2);
     gamestate.setup();
 
-    // println!("{:?}", gamestate);
+    println!("{:?}", gamestate);
 
     loop {
         let mut input = String::new();
@@ -34,5 +34,9 @@ fn main() {
             }
         };
         println!("move: {:?}", choice);
+        match gamestate.make_move(choice) {
+            Err(_) => println!("Illegal move"),
+            Ok(_) => println!("{:?}", gamestate),
+        };
     }
 }

@@ -2,10 +2,11 @@ use crate::movegen::{IllegalMoveError, Tile};
 
 const BOARD_DIMENSION: usize = 5;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+    penalties: usize,
 }
 
 impl Board {
@@ -13,6 +14,7 @@ impl Board {
         Board {
             holds: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
             placed: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
+            penalties: 0,
         }
     }
 
@@ -38,22 +40,9 @@ impl Board {
 
         let overflow = tile_count.saturating_sub(row_capacity);
         for _ in 0..overflow {
-            self.add_penalty_tile();
+            self.penalties += 1;
         }
 
         Ok(())
-    }
-
-    pub fn add_penalty_tile(&mut self) {
-        todo!()
-    }
-}
-
-impl Clone for Board {
-    fn clone(&self) -> Self {
-        let mut board = Board::new();
-        board.holds = self.holds.clone();
-        board.placed = self.holds.clone();
-        board
     }
 }
