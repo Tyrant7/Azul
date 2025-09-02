@@ -101,9 +101,6 @@ impl GameState {
             .get_mut(choice.bowl)
             .ok_or(IllegalMoveError)?
             .take_tiles(choice.tile_type);
-        if tiles.is_empty() {
-            return Err(IllegalMoveError);
-        }
 
         // A penalty is given if we're the first player to pick from the centre
         let penalty = if choice.bowl == CENTRE_BOWL_IDX && self.first_token_owner.is_none() {
@@ -117,7 +114,13 @@ impl GameState {
             .boards
             .get_mut(self.active_player)
             .expect("Invalid player");
-        active_board.hold_tiles(choice.tile_type, tiles.len(), choice.row, penalty)?;
+        active_board.hold_tiles(choice.tile_type, tiles.0.len(), choice.row, penalty)?;
+
+        // Move the remaining tiles to the centre
+        self.bowls
+            .get_mut(CENTRE_BOWL_IDX)
+            .expect("Invalid bowl")
+            .extend(&tiles.1);
 
         // Cycle to the next player's turn
         self.active_player += 1;

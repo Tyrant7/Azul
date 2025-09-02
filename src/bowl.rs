@@ -15,7 +15,12 @@ impl Bowl {
         self.tiles.sort();
     }
 
-    pub fn take_tiles(&mut self, tile_type: Tile) -> Vec<Tile> {
+    pub fn extend(&mut self, tiles: &Vec<Tile>) {
+        self.tiles.extend(tiles);
+        self.tiles.sort();
+    }
+
+    pub fn take_tiles(&mut self, tile_type: Tile) -> (Vec<Tile>, Vec<Tile>) {
         let mut take = Vec::new();
         let mut keep = Vec::new();
         for &tile in self.tiles.iter() {
@@ -25,8 +30,8 @@ impl Bowl {
                 keep.push(tile);
             }
         }
-        self.tiles = keep;
-        take
+        self.tiles.clear();
+        (take, keep)
     }
 
     pub fn get_tile_types(&self) -> Vec<Tile> {
