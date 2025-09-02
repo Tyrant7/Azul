@@ -84,6 +84,10 @@ impl GameState {
     }
 
     pub fn make_move(&mut self, choice: Move) -> Result<(), IllegalMoveError> {
+        if !self.get_valid_moves().contains(&choice) {
+            return Err(IllegalMoveError);
+        }
+
         // Get the tiles and update the bowls
         let tiles = self
             .bowls

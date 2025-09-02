@@ -51,5 +51,11 @@ pub struct Move {
     pub row: usize,
 }
 
+impl PartialEq for Move {
+    fn eq(&self, other: &Self) -> bool {
+        self.bowl == other.bowl && self.tile_type == other.tile_type && self.row == other.row
+    }
+}
+
 #[derive(Debug)]
 pub struct IllegalMoveError;

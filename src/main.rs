@@ -20,9 +20,6 @@ fn main() {
 
     println!("{:?}", gamestate);
 
-    println!("{:#?}", gamestate.get_valid_moves());
-    panic!("Test");
-
     loop {
         let mut input = String::new();
         io::stdin()
