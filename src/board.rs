@@ -56,6 +56,7 @@ impl Board {
         tile_type: Tile,
         tile_count: usize,
         row_idx: usize,
+        penalty: usize,
     ) -> Result<(), IllegalMoveError> {
         // Validate row and existing tiles in that row
         let row = self.holds.get_mut(row_idx).ok_or(IllegalMoveError)?;
@@ -75,6 +76,9 @@ impl Board {
         for _ in 0..overflow {
             self.penalties += 1;
         }
+
+        // We'll also deduct points in certain cases like if we took from the centre first
+        self.penalties += penalty;
 
         Ok(())
     }

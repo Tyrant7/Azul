@@ -7,16 +7,19 @@ use crate::{
 const TILE_TYPES: usize = 4;
 const TILES_PER_TYPE: usize = 20;
 
+const CENTRE_BOWL_IDX: usize = 0;
+
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
     boards: Vec<Board>,
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
+    first_token_owner: Option<usize>,
 }
 
 fn get_bowl_count(players: usize) -> usize {
-    players * 2 + 1
+    players * 2 + 2
 }
 
 fn get_default_tileset() -> Vec<Tile> {
@@ -34,13 +37,14 @@ impl GameState {
             boards: vec![Board::new(); players],
             bowls: vec![Bowl::new(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
+            first_token_owner: None,
         }
     }
 
     pub fn setup(&mut self) {
-        // Fill each bowl, marking the tiles used as being in play
+        // Fill each bowl, skipping the centre
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
-        for bowl in bowls.iter_mut() {
+        for bowl in bowls.iter_mut().skip(1) {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
                 // Refill the bag with all tiles currently not in play
@@ -64,6 +68,9 @@ impl GameState {
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
             bowl.fill(next.clone());
         }
+
+        // At the end of setup, the player with the first player's token goes first
+        self.active_player = self.first_token_owner.unwrap_or_default();
     }
 
     pub fn get_valid_moves(&self) -> Vec<Move> {
@@ -98,12 +105,19 @@ impl GameState {
             return Err(IllegalMoveError);
         }
 
+        // A penalty is given if we're the first player to pick from the centre
+        let penalty = if choice.bowl == CENTRE_BOWL_IDX && self.first_token_owner.is_none() {
+            1
+        } else {
+            0
+        };
+
         // Put the tiles into the appropriate row
         let active_board = self
             .boards
             .get_mut(self.active_player)
             .expect("Invalid player");
-        active_board.hold_tiles(choice.tile_type, tiles.len(), choice.row)?;
+        active_board.hold_tiles(choice.tile_type, tiles.len(), choice.row, penalty)?;
 
         // Cycle to the next player's turn
         self.active_player += 1;
