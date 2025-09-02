@@ -44,7 +44,22 @@ impl GameState {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
                 // Refill the bag with all tiles currently not in play
-                // TODO
+                let mut used_tiles = Vec::new();
+                for board in &self.boards {
+                    used_tiles.extend(board.get_active_tiles());
+                }
+                let mut unused_tiles = Vec::new();
+                for t in 0..TILE_TYPES {
+                    unused_tiles.append(&mut vec![
+                        t as Tile;
+                        TILES_PER_TYPE
+                            - used_tiles
+                                .iter()
+                                .filter(|&&x| x == t as Tile)
+                                .count()
+                    ]);
+                }
+                bag.restock(unused_tiles);
             }
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
             bowl.fill(next.clone());

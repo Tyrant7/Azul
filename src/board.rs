@@ -20,6 +20,14 @@ impl Board {
         }
     }
 
+    pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {
+        self.holds
+            .iter()
+            .flatten()
+            .chain(self.placed.iter().flatten())
+            .filter_map(|&t| t)
+    }
+
     pub fn hold_tiles(
         &mut self,
         tile_type: Tile,
@@ -73,6 +81,11 @@ impl Board {
     }
 
     fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
+        // Tiles simply cycle by index
+        // 0 1 2 3 4
+        // 4 0 1 2 3
+        // 3 4 0 1 2
+        // ...
         todo!()
     }
 }
