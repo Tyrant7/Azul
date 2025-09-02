@@ -12,6 +12,7 @@ impl Bowl {
 
     pub fn fill(&mut self, tiles: Vec<Tile>) {
         self.tiles = tiles;
+        self.tiles.sort();
     }
 
     pub fn take_tiles(&mut self, tile_type: Tile) -> Vec<Tile> {
@@ -30,7 +31,6 @@ impl Bowl {
 
     pub fn get_tile_types(&self) -> Vec<Tile> {
         let mut tiles = self.tiles.clone();
-        tiles.sort();
         tiles.dedup();
         tiles
     }
