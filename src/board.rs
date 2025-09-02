@@ -86,6 +86,6 @@ impl Board {
         // 4 0 1 2 3
         // 3 4 0 1 2
         // ...
-        todo!()
+        (tile_type + row_idx) % BOARD_DIMENSION
     }
 }

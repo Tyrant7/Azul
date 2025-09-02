@@ -1,4 +1,4 @@
-pub type Tile = u32;
+pub type Tile = usize;
 
 #[derive(Debug)]
 pub struct Bowl {
