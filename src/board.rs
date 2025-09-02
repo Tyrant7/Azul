@@ -114,7 +114,7 @@ impl Board {
         }
 
         // Let's also apply our penalties
-        self.score -= self.penalties;
+        self.score -= Board::get_penalty_point_value(self.penalties);
         self.penalties = 0;
     }
 
@@ -125,5 +125,9 @@ impl Board {
         // 3 4 0 1 2
         // ...
         (tile_type + row_idx) % BOARD_DIMENSION
+    }
+
+    fn get_penalty_point_value(penalty_tiles: usize) -> usize {
+        [1, 1, 2, 2, 2, 3, 3].iter().take(penalty_tiles).sum()
     }
 }
