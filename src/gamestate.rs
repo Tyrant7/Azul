@@ -1,7 +1,7 @@
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
-    movegen::{Bowl, IllegalMoveError, Move, Tile},
+    bowl::{Bowl, IllegalMoveError, Move, Tile},
 };
 
 const TILE_TYPES: usize = 4;
@@ -64,6 +64,23 @@ impl GameState {
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
             bowl.fill(next.clone());
         }
+    }
+
+    pub fn get_valid_moves(&self) -> Vec<Move> {
+        let board = self.boards.get(self.active_player).expect("Invalid player");
+        let mut moves = Vec::new();
+        for (bowl_idx, bowl) in self.bowls.iter().enumerate() {
+            for tile in bowl.get_tile_types() {
+                for row in board.get_valid_rows_for_tile_type(tile) {
+                    moves.push(Move {
+                        bowl: bowl_idx,
+                        tile_type: tile,
+                        row,
+                    });
+                }
+            }
+        }
+        moves
     }
 
     pub fn make_move(&mut self, choice: Move) -> Result<(), IllegalMoveError> {

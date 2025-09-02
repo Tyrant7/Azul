@@ -6,8 +6,8 @@ use std::io;
 
 mod bag;
 mod board;
+mod bowl;
 mod gamestate;
-mod movegen;
 mod utility;
 
 use board::Board;
@@ -19,6 +19,9 @@ fn main() {
     gamestate.setup();
 
     println!("{:?}", gamestate);
+
+    println!("{:#?}", gamestate.get_valid_moves());
+    panic!("Test");
 
     loop {
         let mut input = String::new();

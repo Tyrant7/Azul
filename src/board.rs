@@ -1,4 +1,4 @@
-use crate::movegen::{IllegalMoveError, Tile};
+use crate::bowl::{IllegalMoveError, Tile};
 
 const BOARD_DIMENSION: usize = 5;
 
@@ -49,6 +49,29 @@ impl Board {
             .flatten()
             .chain(self.placed.iter().flatten())
             .filter_map(|&t| t)
+    }
+
+    pub fn get_valid_rows_for_tile_type(&self, tile_type: Tile) -> Vec<usize> {
+        let mut valid_rows = Vec::new();
+        for (row_idx, hold) in self.holds.iter().enumerate() {
+            // If we have a different tile held in this row
+            if hold.iter().any(|t| t.is_some_and(|x| x != tile_type)) {
+                continue;
+            }
+            // Or if we have this type of tile already placed somewhere in this row
+            if self
+                .placed
+                .get(row_idx)
+                .expect("Invalid row")
+                .get(Board::get_tile_place_col(tile_type, row_idx))
+                .expect("Invalid columnn")
+                .is_some_and(|t| t == tile_type)
+            {
+                continue;
+            }
+            valid_rows.push(row_idx);
+        }
+        valid_rows
     }
 
     pub fn hold_tiles(

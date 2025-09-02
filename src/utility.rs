@@ -1,6 +1,6 @@
 use std::num::ParseIntError;
 
-use crate::movegen::{Move, Tile};
+use crate::bowl::{Move, Tile};
 
 #[derive(Debug)]
 pub struct ParseMoveError;

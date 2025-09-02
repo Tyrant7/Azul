@@ -27,6 +27,13 @@ impl Bowl {
         self.tiles = keep;
         take
     }
+
+    pub fn get_tile_types(&self) -> Vec<Tile> {
+        let mut tiles = self.tiles.clone();
+        tiles.sort();
+        tiles.dedup();
+        tiles
+    }
 }
 
 impl Clone for Bowl {
