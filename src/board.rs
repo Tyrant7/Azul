@@ -2,6 +2,29 @@ use crate::movegen::{IllegalMoveError, Tile};
 
 const BOARD_DIMENSION: usize = 5;
 
+fn count_in_direction(
+    placed: &[[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+    mut row: isize,
+    mut col: isize,
+    drow: isize,
+    dcol: isize,
+) -> usize {
+    let mut count = 0;
+    loop {
+        row += drow;
+        col += dcol;
+        if row < 0 || col < 0 {
+            break;
+        }
+        if let Some(Some(_)) = placed.get(row as usize).and_then(|r| r.get(col as usize)) {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
@@ -57,21 +80,36 @@ impl Board {
     }
 
     pub fn place_holds(&mut self) {
-        for (i, row) in self.holds.iter().enumerate() {
+        for (row_idx, row) in self.holds.iter().enumerate() {
             let tiles_in_row = row.iter().filter(|tile| tile.is_some()).count();
 
             // We have enough tiles to place in this row, let's determine the position
-            if tiles_in_row > i {
+            if tiles_in_row > row_idx {
                 let tile_type = row[0].unwrap();
-                let tile_col = Board::get_tile_place_col(tile_type, i);
+                let col_idx = Board::get_tile_place_col(tile_type, row_idx);
                 *self
                     .placed
-                    .get_mut(i)
+                    .get_mut(row_idx)
                     .expect("Invalid row")
-                    .get_mut(tile_col)
+                    .get_mut(col_idx)
                     .expect("Invalid column") = Some(tile_type);
 
-                // TODO: Score newly placed tile
+                // Score newly placed tile
+                // We'll walk horizontal and vertically, counting the lengths of each group
+                let h_line = 1
+                    + count_in_direction(&self.placed, row_idx as isize, col_idx as isize, 0, 1)
+                    + count_in_direction(&self.placed, row_idx as isize, col_idx as isize, 0, -1);
+                let v_line = 1
+                    + count_in_direction(&self.placed, row_idx as isize, col_idx as isize, 1, 0)
+                    + count_in_direction(&self.placed, row_idx as isize, col_idx as isize, -1, 0);
+
+                // If the tile is alone, don't double-count it
+                self.score += if h_line == 1 && v_line == 1 {
+                    1
+                } else {
+                    // Otherwise, we count the score for axes with more tiles than one
+                    (if h_line > 1 { h_line } else { 0 }) + (if v_line > 1 { v_line } else { 0 })
+                };
             }
         }
 
