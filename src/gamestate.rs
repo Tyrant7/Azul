@@ -12,7 +12,6 @@ const CENTRE_BOWL_IDX: usize = 0;
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
-    last_player: usize,
     boards: Vec<Board>,
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
@@ -35,7 +34,6 @@ impl GameState {
     pub fn new(players: usize) -> Self {
         GameState {
             active_player: 0,
-            last_player: 1,
             boards: vec![Board::new(); players],
             bowls: vec![Bowl::new(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
