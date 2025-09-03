@@ -140,7 +140,9 @@ impl Board {
         }
 
         // Let's also apply our penalties
-        self.score -= Board::get_penalty_point_value(self.penalties);
+        self.score = self
+            .score
+            .saturating_sub(Board::get_penalty_point_value(self.penalties));
         self.penalties = 0;
     }
 

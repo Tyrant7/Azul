@@ -13,7 +13,7 @@ mod utility;
 use board::Board;
 use rand::seq::IndexedRandom;
 
-use crate::gamestate::GameState;
+use crate::{bowl::Move, gamestate::GameState};
 
 fn main() {
     let mut gamestate = GameState::new(2);
@@ -55,7 +55,11 @@ fn random_playout(mut gamestate: GameState) {
         let moves = gamestate.get_valid_moves();
         println!("moves: {:?}", moves);
 
-        let selection = moves.choose(&mut rand::rng()).expect("No moves");
+        let selection = moves.choose(&mut rand::rng()).unwrap_or(&Move {
+            bowl: 0,
+            tile_type: 0,
+            row: 0,
+        });
         println!("selection: {:?}", selection);
 
         match gamestate.make_move(selection) {

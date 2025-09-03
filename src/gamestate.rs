@@ -12,6 +12,7 @@ const CENTRE_BOWL_IDX: usize = 0;
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
+    last_player: usize,
     boards: Vec<Board>,
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
@@ -34,6 +35,7 @@ impl GameState {
     pub fn new(players: usize) -> Self {
         GameState {
             active_player: 0,
+            last_player: 1,
             boards: vec![Board::new(); players],
             bowls: vec![Bowl::new(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
@@ -93,6 +95,12 @@ impl GameState {
 
     pub fn make_move(&mut self, choice: &Move) -> Result<(), IllegalMoveError> {
         let valid_moves = self.get_valid_moves();
+
+        // If the active player has no valid moves, they must skip their turn
+        if valid_moves.is_empty() {
+            self.next_turn();
+            return Ok(());
+        }
         if !valid_moves.contains(choice) {
             return Err(IllegalMoveError);
         }
@@ -126,18 +134,27 @@ impl GameState {
             .extend(&tiles.1);
 
         // Cycle to the next player's turn
+        self.last_player = self.active_player;
+        self.next_turn();
+        Ok(())
+    }
+
+    fn next_turn(&mut self) {
+        // Advance active player's turn
         self.active_player += 1;
         if self.active_player >= self.boards.len() {
             self.active_player = 0;
         }
 
-        // If we have no more tiles, let's setup for the next round
-        if self.bowls.iter().all(|b| b.get_tile_types().is_empty()) {
+        // If neither player can play, or if we have no more tiles
+        // let's setup for the next round
+        if self.active_player == self.last_player
+            || self.bowls.iter().all(|b| b.get_tile_types().is_empty())
+        {
             for board in self.boards.iter_mut() {
                 board.place_holds();
             }
             self.setup();
         }
-        Ok(())
     }
 }

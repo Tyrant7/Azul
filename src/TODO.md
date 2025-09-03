@@ -2,9 +2,8 @@
 
 ## Movegen
 - Finish scoring system to account for complete row/cols/diagonals
-- Centre region and first player token
-- Bag refilling when no legal moves remain
 - Game ending
+- Softlock detection + skipping for turns with no legal moves
 - Finish and document UAI implementation (universal Azul interface)
 - Implement tests
 
