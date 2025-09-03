@@ -132,7 +132,7 @@ impl GameState {
         }
 
         // If we have no more tiles, let's setup for the next round
-        if self.bowls.iter().any(|b| !b.get_tile_types().is_empty()) {
+        if self.bowls.iter().all(|b| b.get_tile_types().is_empty()) {
             for board in self.boards.iter_mut() {
                 board.place_holds();
             }
