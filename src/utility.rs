@@ -14,7 +14,7 @@ impl From<ParseIntError> for ParseMoveError {
 /*
 Here we expect moves in the format of `bowl, tile_type, row` where each input is a two-digit number
 ex. 040102 would correspond to the fourth bowl, first tile type, and second row of our own board
-Note: Bowl 00 will always correspond to the centre area
+Note: Bowl 00 will always correspond to the centre area, and row 00 will always correspond to the penalty area
 */
 pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     if input.len() != 6 {
