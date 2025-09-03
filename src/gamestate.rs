@@ -71,6 +71,7 @@ impl GameState {
 
         // At the end of setup, the player with the first player's token goes first
         self.active_player = self.first_token_owner.unwrap_or_default();
+        self.first_token_owner = None;
     }
 
     pub fn get_valid_moves(&self) -> Vec<Move> {
@@ -91,7 +92,8 @@ impl GameState {
     }
 
     pub fn make_move(&mut self, choice: Move) -> Result<(), IllegalMoveError> {
-        if !self.get_valid_moves().contains(&choice) {
+        let valid_moves = self.get_valid_moves();
+        if !valid_moves.contains(&choice) {
             return Err(IllegalMoveError);
         }
 
@@ -104,6 +106,7 @@ impl GameState {
 
         // A penalty is given if we're the first player to pick from the centre
         let penalty = if choice.bowl == CENTRE_BOWL_IDX && self.first_token_owner.is_none() {
+            self.first_token_owner = Some(self.active_player);
             1
         } else {
             0
@@ -126,6 +129,14 @@ impl GameState {
         self.active_player += 1;
         if self.active_player >= self.boards.len() {
             self.active_player = 0;
+        }
+
+        // If we only had one valid move, let's setup for the next round
+        if valid_moves.len() == 1 {
+            for board in self.boards.iter_mut() {
+                board.place_holds();
+            }
+            self.setup();
         }
         Ok(())
     }
