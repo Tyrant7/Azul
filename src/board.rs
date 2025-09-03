@@ -84,11 +84,12 @@ impl Board {
     }
 
     pub fn place_holds(&mut self) {
-        for (row_idx, row) in self.holds.iter().enumerate() {
+        for (row_idx, row) in self.holds.iter_mut().enumerate() {
             let tiles_in_row = row.iter().filter(|tile| tile.is_some()).count();
 
-            // We have enough tiles to place in this row, let's determine the position
+            // We have enough tiles to place in this row
             if tiles_in_row > row_idx {
+                // Let's determine the position
                 let tile_type = row[0].unwrap();
                 let col_idx = Board::get_tile_place_col(tile_type, row_idx);
                 *self
@@ -136,6 +137,11 @@ impl Board {
                     // Otherwise, we count the score for axes with more tiles than one
                     (if h_line > 1 { h_line } else { 0 }) + (if v_line > 1 { v_line } else { 0 })
                 };
+
+                // Now we'll clear the hold for this row
+                for tile in row.iter_mut() {
+                    *tile = None;
+                }
             }
         }
 
