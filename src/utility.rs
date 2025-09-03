@@ -1,6 +1,6 @@
 use std::num::ParseIntError;
 
-use crate::bowl::{Move, Tile};
+use crate::bowl::{Move, Row, Tile};
 
 #[derive(Debug)]
 pub struct ParseMoveError;
@@ -26,9 +26,14 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     let bowl = bowl.parse::<usize>()?;
     let tile_type = tile_type.parse::<Tile>()?;
     let row = row.parse::<usize>()?;
+    let row = if row == 0 {
+        Row::Floor
+    } else {
+        Row::Wall(row - 1)
+    };
     Ok(Move {
         bowl,
         tile_type,
-        row: crate::bowl::Row::Wall(row),
+        row,
     })
 }
