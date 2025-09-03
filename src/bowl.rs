@@ -1,3 +1,5 @@
+use std::path::Display;
+
 pub type Tile = usize;
 
 #[derive(Debug)]
@@ -60,6 +62,19 @@ pub struct Move {
 pub enum Row {
     Floor,
     Wall(usize),
+}
+
+impl std::fmt::Display for Row {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                Row::Floor => "-".to_string(),
+                Row::Wall(i) => i.to_string(),
+            }
+        )
+    }
 }
 
 #[derive(Debug)]

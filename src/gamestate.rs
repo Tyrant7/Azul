@@ -149,3 +149,26 @@ impl GameState {
         Ok(())
     }
 }
+
+impl std::fmt::Display for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", "-".repeat(20))?;
+        for (i, board) in self.boards.iter().enumerate() {
+            writeln!(
+                f,
+                "player {}{}",
+                i,
+                if self.active_player == i {
+                    " (active)"
+                } else {
+                    ""
+                }
+            )?;
+            board.fmt(f)?;
+            writeln!(f)?;
+        }
+        writeln!(f, "{}", "-".repeat(20))?;
+
+        Ok(())
+    }
+}

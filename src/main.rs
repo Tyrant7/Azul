@@ -18,7 +18,7 @@ use crate::{bowl::Move, gamestate::GameState};
 fn main() {
     let mut gamestate = GameState::new(2);
     gamestate.setup();
-    println!("{:?}", gamestate);
+    println!("{}", gamestate);
 
     random_playout(gamestate);
 }
@@ -64,7 +64,7 @@ fn random_playout(mut gamestate: GameState) {
 
         match gamestate.make_move(selection) {
             Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{:?}", gamestate),
+            Ok(_) => println!("{}", gamestate),
         };
     }
 }

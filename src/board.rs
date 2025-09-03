@@ -197,3 +197,31 @@ impl Board {
         count
     }
 }
+
+impl std::fmt::Display for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for ((h_idx, hold), row) in self.holds.iter().enumerate().zip(self.placed) {
+            write!(f, "{}", "  ".repeat(BOARD_DIMENSION - h_idx))?;
+            for h in 0..h_idx + 1 {
+                if let Some(h) = hold.get(h).and_then(|x| *x) {
+                    write!(f, "{} ", h)?;
+                } else {
+                    write!(f, ". ")?;
+                }
+            }
+            write!(f, " | ")?;
+            for p in 0..BOARD_DIMENSION {
+                if let Some(p) = row.get(p).and_then(|x| *x) {
+                    write!(f, "{} ", p)?;
+                } else {
+                    write!(f, ". ")?;
+                }
+            }
+            writeln!(f)?;
+        }
+        writeln!(f)?;
+        writeln!(f, "score: {}", self.score)?;
+        writeln!(f, "penalties: {}", self.penalties)?;
+        Ok(())
+    }
+}
