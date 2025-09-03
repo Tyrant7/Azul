@@ -11,6 +11,7 @@ mod gamestate;
 mod utility;
 
 use board::Board;
+use rand::seq::IndexedRandom;
 
 use crate::gamestate::GameState;
 
@@ -19,6 +20,10 @@ fn main() {
     gamestate.setup();
     println!("{:?}", gamestate);
 
+    random_playout(gamestate);
+}
+
+fn listen_for_input(mut gamestate: GameState) {
     loop {
         let mut input = String::new();
         io::stdin()
@@ -33,7 +38,27 @@ fn main() {
             }
         };
         println!("move: {:?}", choice);
-        match gamestate.make_move(choice) {
+
+        match gamestate.make_move(&choice) {
+            Err(_) => println!("Illegal move"),
+            Ok(_) => println!("{:?}", gamestate),
+        };
+    }
+}
+
+fn random_playout(mut gamestate: GameState) {
+    loop {
+        io::stdin()
+            .read_line(&mut String::new())
+            .expect("Failed to read input");
+
+        let moves = gamestate.get_valid_moves();
+        println!("moves: {:?}", moves);
+
+        let selection = moves.choose(&mut rand::rng()).expect("No moves");
+        println!("selection: {:?}", selection);
+
+        match gamestate.make_move(selection) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{:?}", gamestate),
         };

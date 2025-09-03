@@ -91,9 +91,9 @@ impl GameState {
         moves
     }
 
-    pub fn make_move(&mut self, choice: Move) -> Result<(), IllegalMoveError> {
+    pub fn make_move(&mut self, choice: &Move) -> Result<(), IllegalMoveError> {
         let valid_moves = self.get_valid_moves();
-        if !valid_moves.contains(&choice) {
+        if !valid_moves.contains(choice) {
             return Err(IllegalMoveError);
         }
 
@@ -131,8 +131,8 @@ impl GameState {
             self.active_player = 0;
         }
 
-        // If we only had one valid move, let's setup for the next round
-        if valid_moves.len() == 1 {
+        // If we have no more tiles, let's setup for the next round
+        if self.bowls.iter().any(|b| !b.get_tile_types().is_empty()) {
             for board in self.boards.iter_mut() {
                 board.place_holds();
             }
