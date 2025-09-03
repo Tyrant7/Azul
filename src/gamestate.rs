@@ -1,7 +1,7 @@
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
-    bowl::{Bowl, IllegalMoveError, Move, Tile},
+    bowl::{Bowl, IllegalMoveError, Move, Row, Tile},
 };
 
 const TILE_TYPES: usize = 4;
@@ -81,11 +81,18 @@ impl GameState {
         let mut moves = Vec::new();
         for (bowl_idx, bowl) in self.bowls.iter().enumerate() {
             for tile in bowl.get_tile_types() {
-                for row in board.get_valid_rows_for_tile_type(tile) {
+                for row_idx in board.get_valid_rows_for_tile_type(tile) {
                     moves.push(Move {
                         bowl: bowl_idx,
                         tile_type: tile,
-                        row,
+                        row: Row::Wall(row_idx),
+                    });
+
+                    // We also have the option to penalize ourselves with this move if we want
+                    moves.push(Move {
+                        bowl: bowl_idx,
+                        tile_type: tile,
+                        row: Row::Floor,
                     });
                 }
             }
@@ -95,12 +102,6 @@ impl GameState {
 
     pub fn make_move(&mut self, choice: &Move) -> Result<(), IllegalMoveError> {
         let valid_moves = self.get_valid_moves();
-
-        // If the active player has no valid moves, they must skip their turn
-        if valid_moves.is_empty() {
-            self.next_turn();
-            return Ok(());
-        }
         if !valid_moves.contains(choice) {
             return Err(IllegalMoveError);
         }
@@ -134,13 +135,6 @@ impl GameState {
             .extend(&tiles.1);
 
         // Cycle to the next player's turn
-        self.last_player = self.active_player;
-        self.next_turn();
-        Ok(())
-    }
-
-    fn next_turn(&mut self) {
-        // Advance active player's turn
         self.active_player += 1;
         if self.active_player >= self.boards.len() {
             self.active_player = 0;
@@ -148,13 +142,12 @@ impl GameState {
 
         // If neither player can play, or if we have no more tiles
         // let's setup for the next round
-        if self.active_player == self.last_player
-            || self.bowls.iter().all(|b| b.get_tile_types().is_empty())
-        {
+        if self.bowls.iter().all(|b| b.get_tile_types().is_empty()) {
             for board in self.boards.iter_mut() {
                 board.place_holds();
             }
             self.setup();
         }
+        Ok(())
     }
 }

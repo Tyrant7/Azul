@@ -58,7 +58,7 @@ fn random_playout(mut gamestate: GameState) {
         let selection = moves.choose(&mut rand::rng()).unwrap_or(&Move {
             bowl: 0,
             tile_type: 0,
-            row: 0,
+            row: bowl::Row::Floor,
         });
         println!("selection: {:?}", selection);
 

@@ -1,4 +1,4 @@
-use crate::bowl::{IllegalMoveError, Tile};
+use crate::bowl::{IllegalMoveError, Row, Tile};
 
 const BOARD_DIMENSION: usize = 5;
 
@@ -55,9 +55,18 @@ impl Board {
         &mut self,
         tile_type: Tile,
         tile_count: usize,
-        row_idx: usize,
+        row_idx: Row,
         penalty: usize,
     ) -> Result<(), IllegalMoveError> {
+        // If we wanted to put the tiles straight to the floor we'll just soak the penalty
+        let row_idx = match row_idx {
+            Row::Floor => {
+                self.penalties += tile_count;
+                return Ok(());
+            }
+            Row::Wall(idx) => idx,
+        };
+
         // Validate row and existing tiles in that row
         let row = self.holds.get_mut(row_idx).ok_or(IllegalMoveError)?;
         if let Some(t) = row.first().unwrap()

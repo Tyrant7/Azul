@@ -29,6 +29,6 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     Ok(Move {
         bowl,
         tile_type,
-        row,
+        row: crate::bowl::Row::Wall(row),
     })
 }

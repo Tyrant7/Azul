@@ -49,17 +49,17 @@ impl Clone for Bowl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Move {
     pub bowl: usize,
     pub tile_type: Tile,
-    pub row: usize,
+    pub row: Row,
 }
 
-impl PartialEq for Move {
-    fn eq(&self, other: &Self) -> bool {
-        self.bowl == other.bowl && self.tile_type == other.tile_type && self.row == other.row
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Row {
+    Floor,
+    Wall(usize),
 }
 
 #[derive(Debug)]
