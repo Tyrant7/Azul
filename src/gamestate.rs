@@ -144,11 +144,16 @@ impl GameState {
     }
 
     pub fn is_game_over(&self) -> bool {
-        self.boards.iter().any(|b| b.has_horizontal_line())
+        self.boards.iter().any(|b| b.count_horizontal_lines() > 0)
     }
 
-    pub fn get_scores(&self) -> Vec<usize> {
-        self.boards.iter().map(|b| b.get_score()).collect()
+    pub fn get_winner(&self) -> usize {
+        self.boards
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, b)| (b.get_score(), b.count_horizontal_lines()))
+            .unwrap()
+            .0
     }
 }
 

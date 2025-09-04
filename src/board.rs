@@ -221,11 +221,11 @@ impl Board {
         }
     }
 
-    pub fn has_horizontal_line(&self) -> bool {
-        // Any row where all tiles are filled
+    pub fn count_horizontal_lines(&self) -> usize {
         self.placed
             .iter()
-            .any(|row| row.iter().all(|x| x.is_some()))
+            .filter(|row| row.iter().all(|x| x.is_some()))
+            .count()
     }
 
     pub fn get_score(&self) -> usize {
