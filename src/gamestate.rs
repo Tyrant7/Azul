@@ -4,7 +4,7 @@ use crate::{
     bowl::{Bowl, IllegalMoveError, Move, Tile},
 };
 
-const TILE_TYPES: usize = 4;
+const TILE_TYPES: usize = 5;
 const TILES_PER_TYPE: usize = 20;
 
 const CENTRE_BOWL_IDX: usize = 0;
@@ -140,6 +140,14 @@ impl GameState {
             self.setup();
         }
         Ok(())
+    }
+
+    pub fn is_game_over(&self) -> bool {
+        self.boards.iter().any(|b| b.has_horizontal_line())
+    }
+
+    pub fn get_scores(&self) -> Vec<usize> {
+        self.boards.iter().map(|b| b.get_score()).collect()
     }
 }
 

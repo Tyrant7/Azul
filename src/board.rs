@@ -163,6 +163,17 @@ impl Board {
         self.penalties = 0;
     }
 
+    pub fn has_horizontal_line(&self) -> bool {
+        // Any row where all tiles are filled
+        self.placed
+            .iter()
+            .any(|row| row.iter().all(|x| x.is_some()))
+    }
+
+    pub fn get_score(&self) -> usize {
+        self.score
+    }
+
     fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
         // Tiles simply cycle by index
         // 0 1 2 3 4

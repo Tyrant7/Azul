@@ -20,7 +20,8 @@ fn main() {
     gamestate.setup();
     println!("{}", gamestate);
 
-    random_playout(gamestate);
+    listen_for_input(gamestate);
+    // random_playout(gamestate);
 }
 
 fn listen_for_input(mut gamestate: GameState) {
@@ -43,7 +44,13 @@ fn listen_for_input(mut gamestate: GameState) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{:?}", gamestate),
         };
+
+        if gamestate.is_game_over() {
+            break;
+        }
     }
+    println!("Game over");
+    println!("Results: {:?}", gamestate.get_scores());
 }
 
 fn random_playout(mut gamestate: GameState) {
@@ -64,5 +71,11 @@ fn random_playout(mut gamestate: GameState) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{}", gamestate),
         };
+
+        if gamestate.is_game_over() {
+            break;
+        }
     }
+    println!("Game over");
+    println!("Results: {:?}", gamestate.get_scores());
 }
