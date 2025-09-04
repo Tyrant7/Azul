@@ -53,8 +53,6 @@ fn random_playout(mut gamestate: GameState) {
             .expect("Failed to read input");
 
         let moves = gamestate.get_valid_moves();
-        println!("moves: {:?}", moves);
-
         let selection = moves.choose(&mut rand::rng()).unwrap_or(&Move {
             bowl: 0,
             tile_type: 0,

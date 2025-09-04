@@ -1,7 +1,7 @@
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
-    bowl::{Bowl, IllegalMoveError, Move, Row, Tile},
+    bowl::{Bowl, IllegalMoveError, Move, Tile},
 };
 
 const TILE_TYPES: usize = 4;
@@ -79,18 +79,11 @@ impl GameState {
         let mut moves = Vec::new();
         for (bowl_idx, bowl) in self.bowls.iter().enumerate() {
             for tile in bowl.get_tile_types() {
-                for row_idx in board.get_valid_rows_for_tile_type(tile) {
+                for row in board.get_valid_rows_for_tile_type(tile) {
                     moves.push(Move {
                         bowl: bowl_idx,
                         tile_type: tile,
-                        row: Row::Wall(row_idx),
-                    });
-
-                    // We also have the option to penalize ourselves with this move if we want
-                    moves.push(Move {
-                        bowl: bowl_idx,
-                        tile_type: tile,
-                        row: Row::Floor,
+                        row,
                     });
                 }
             }

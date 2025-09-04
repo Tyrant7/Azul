@@ -28,7 +28,7 @@ impl Board {
             .filter_map(|&t| t)
     }
 
-    pub fn get_valid_rows_for_tile_type(&self, tile_type: Tile) -> Vec<usize> {
+    pub fn get_valid_rows_for_tile_type(&self, tile_type: Tile) -> Vec<Row> {
         let mut valid_rows = Vec::new();
         for (row_idx, hold) in self.holds.iter().enumerate() {
             // If we have a different tile held in this row
@@ -46,8 +46,10 @@ impl Board {
             {
                 continue;
             }
-            valid_rows.push(row_idx);
+            valid_rows.push(Row::Wall(row_idx));
         }
+        // We can always soak a penalty if we want
+        valid_rows.push(Row::Floor);
         valid_rows
     }
 

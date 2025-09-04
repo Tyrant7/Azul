@@ -1,5 +1,3 @@
-use std::path::Display;
-
 pub type Tile = usize;
 
 #[derive(Debug)]
