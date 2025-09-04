@@ -1,11 +1,16 @@
 use crate::bowl::{IllegalMoveError, Row, Tile};
 
-const BOARD_DIMENSION: usize = 5;
+pub const BOARD_DIMENSION: usize = 5;
+
+const ROW_BONUS: usize = 2;
+const COLUMN_BONUS: usize = 7;
+const TILE_TYPE_BONUS: usize = 10;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+    bonuses: BonusTypes,
     penalties: usize,
     score: usize,
 }
@@ -15,6 +20,11 @@ impl Board {
         Board {
             holds: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
             placed: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
+            bonuses: BonusTypes {
+                rows: [false; BOARD_DIMENSION],
+                columns: [false; BOARD_DIMENSION],
+                tile_types: [false; BOARD_DIMENSION],
+            },
             penalties: 0,
             score: 0,
         }
@@ -156,11 +166,59 @@ impl Board {
             }
         }
 
+        // Let's apply bonuses that we haven't collected yet
+        self.apply_uncollected_bonuses();
+
         // Let's also apply our penalties
         self.score = self
             .score
             .saturating_sub(Board::get_penalty_point_value(self.penalties));
         self.penalties = 0;
+    }
+
+    fn apply_uncollected_bonuses(&mut self) {
+        // Start with rows
+        for (i, claimed) in self.bonuses.rows.iter_mut().enumerate() {
+            if *claimed {
+                continue;
+            }
+            // We haven't collected this bonus yet but this row has been filled,
+            // so we'll collect that
+            if self.placed[i].iter().all(|x| x.is_some()) {
+                self.score += ROW_BONUS;
+                *claimed = true;
+            }
+        }
+
+        // Then columns
+        for (i, claimed) in self.bonuses.columns.iter_mut().enumerate() {
+            if *claimed {
+                continue;
+            }
+            if self.placed.iter().all(|row| row.get(i).is_some()) {
+                self.score += COLUMN_BONUS;
+                *claimed = true;
+            }
+        }
+
+        // And finally, tile types
+        for (i, claimed) in self.bonuses.tile_types.iter_mut().enumerate() {
+            if *claimed {
+                continue;
+            }
+            if self
+                .placed
+                .iter()
+                .flatten()
+                .filter_map(|&t| t)
+                .filter(|&t| t == i)
+                .count()
+                == BOARD_DIMENSION
+            {
+                self.score += TILE_TYPE_BONUS;
+                *claimed = true;
+            }
+        }
     }
 
     pub fn has_horizontal_line(&self) -> bool {
@@ -238,4 +296,11 @@ impl std::fmt::Display for Board {
         writeln!(f, "penalties: {}", self.penalties)?;
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BonusTypes {
+    pub rows: [bool; BOARD_DIMENSION],
+    pub columns: [bool; BOARD_DIMENSION],
+    pub tile_types: [bool; BOARD_DIMENSION],
 }

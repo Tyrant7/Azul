@@ -1,10 +1,10 @@
 use crate::{
     BOWL_CAPACITY, Board,
     bag::Bag,
+    board::BOARD_DIMENSION,
     bowl::{Bowl, IllegalMoveError, Move, Tile},
 };
 
-const TILE_TYPES: usize = 5;
 const TILES_PER_TYPE: usize = 20;
 
 const CENTRE_BOWL_IDX: usize = 0;
@@ -24,7 +24,8 @@ fn get_bowl_count(players: usize) -> usize {
 
 fn get_default_tileset() -> Vec<Tile> {
     let mut tiles = Vec::new();
-    for t in 0..TILE_TYPES {
+    // There should always be the same number of tiles as board width
+    for t in 0..BOARD_DIMENSION {
         tiles.append(&mut vec![t as Tile; TILES_PER_TYPE]);
     }
     tiles
@@ -53,7 +54,7 @@ impl GameState {
                     used_tiles.extend(board.get_active_tiles());
                 }
                 let mut unused_tiles = Vec::new();
-                for t in 0..TILE_TYPES {
+                for t in 0..BOARD_DIMENSION {
                     unused_tiles.append(&mut vec![
                         t as Tile;
                         TILES_PER_TYPE
