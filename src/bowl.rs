@@ -51,6 +51,18 @@ impl Clone for Bowl {
     }
 }
 
+impl std::fmt::Display for Bowl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for tile in self.tiles.iter() {
+            write!(f, "{}", tile)?;
+        }
+        if self.tiles.is_empty() {
+            write!(f, "-")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Move {
     pub bowl: usize,

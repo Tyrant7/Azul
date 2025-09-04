@@ -152,6 +152,7 @@ impl GameState {
 
 impl std::fmt::Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Board printouts
         writeln!(f, "{}", "-".repeat(20))?;
         for (i, board) in self.boards.iter().enumerate() {
             writeln!(
@@ -168,6 +169,11 @@ impl std::fmt::Display for GameState {
             writeln!(f)?;
         }
         writeln!(f, "{}", "-".repeat(20))?;
+
+        // Bowl printouts
+        for (i, bowl) in self.bowls.iter().enumerate() {
+            write!(f, "{}: {} | ", i, bowl)?;
+        }
 
         Ok(())
     }
