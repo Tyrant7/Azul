@@ -42,7 +42,7 @@ fn listen_for_input(mut gamestate: GameState) {
 
         match gamestate.make_move(&choice) {
             Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{:?}", gamestate),
+            Ok(_) => println!("{}", gamestate),
         };
 
         if gamestate.is_game_over() {
