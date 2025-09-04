@@ -214,7 +214,7 @@ impl Board {
 impl std::fmt::Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for ((h_idx, hold), row) in self.holds.iter().enumerate().zip(self.placed) {
-            write!(f, "{}", h_idx)?;
+            write!(f, "{}", h_idx + 1)?;
             write!(f, "{}", "  ".repeat(BOARD_DIMENSION - h_idx))?;
             for h in 0..h_idx + 1 {
                 if let Some(h) = hold.get(h).and_then(|x| *x) {
