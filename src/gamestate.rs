@@ -3,7 +3,7 @@ use crate::{
     bag::Bag,
     board::BOARD_DIMENSION,
     bowl::{Bowl, IllegalMoveError, Move, Tile},
-    protocol::{Protocol, ProtocolFormat},
+    protocol::ProtocolFormat,
 };
 
 const TILES_PER_TYPE: usize = 20;

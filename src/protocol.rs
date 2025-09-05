@@ -1,14 +1,6 @@
-use std::{
-    env::{self, Args},
-    num::ParseIntError,
-};
-
-use clap::{Parser, ValueEnum, builder::Str};
-
-use crate::{
-    bowl::{Move, Row, Tile},
-    protocol,
-};
+use crate::bowl::{Move, Row, Tile};
+use clap::{Parser, ValueEnum};
+use std::num::ParseIntError;
 
 #[derive(Parser)]
 #[command(name = "azul-engine")]
@@ -32,7 +24,6 @@ impl Protocol {
     }
 }
 
-// TODO: finish this
 pub trait ProtocolFormat {
     fn fmt_human(&self) -> String;
     fn fmt_uci_like(&self) -> String;

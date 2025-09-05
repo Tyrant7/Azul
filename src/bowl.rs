@@ -1,4 +1,4 @@
-use crate::{bowl, protocol::ProtocolFormat};
+use crate::protocol::ProtocolFormat;
 
 pub type Tile = usize;
 
