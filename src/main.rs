@@ -8,20 +8,21 @@ mod bag;
 mod board;
 mod bowl;
 mod gamestate;
-mod utility;
+mod protocol;
 
 use board::Board;
 use rand::seq::IndexedRandom;
 
-use crate::{bowl::Move, gamestate::GameState};
+use crate::{bowl::Move, gamestate::GameState, protocol::Protocol};
 
 fn main() {
+    let protocol = Protocol::extract();
+
     let mut gamestate = GameState::new(2);
     gamestate.setup();
     println!("{}", gamestate);
 
     listen_for_input(gamestate);
-    // random_playout(gamestate);
 }
 
 fn listen_for_input(mut gamestate: GameState) {
@@ -31,7 +32,7 @@ fn listen_for_input(mut gamestate: GameState) {
             .read_line(&mut input)
             .expect("Failed to read input");
         let input = input.trim();
-        let choice = match utility::parse_move(input) {
+        let choice = match protocol::parse_move(input) {
             Ok(m) => m,
             Err(e) => {
                 println!("Invalid move: {:?}", e);
@@ -50,7 +51,7 @@ fn listen_for_input(mut gamestate: GameState) {
         }
     }
     println!("Game over");
-    println!("Results: {:?}", gamestate.get_scores());
+    println!("Winner: player {}", gamestate.get_winner());
 }
 
 fn random_playout(mut gamestate: GameState) {
@@ -77,5 +78,5 @@ fn random_playout(mut gamestate: GameState) {
         }
     }
     println!("Game over");
-    println!("Results: {:?}", gamestate.get_scores());
+    println!("Winner: player {}", gamestate.get_winner());
 }

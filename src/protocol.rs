@@ -1,6 +1,33 @@
-use std::num::ParseIntError;
+use std::{
+    env::{self, Args},
+    num::ParseIntError,
+};
+
+use clap::{Parser, ValueEnum};
 
 use crate::bowl::{Move, Row, Tile};
+
+#[derive(Parser)]
+#[command(name = "azul-engine")]
+#[command(about = "An azul engine")]
+struct Cli {
+    #[arg(long, value_enum, default_value_t = Protocol::Human)]
+    protocol: Protocol,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum Protocol {
+    Human,
+    UCILike,
+}
+
+impl Protocol {
+    pub fn extract() -> Protocol {
+        let cli = Cli::parse();
+        println!("Running with protocol: {:?}", cli.protocol);
+        cli.protocol
+    }
+}
 
 #[derive(Debug)]
 pub struct ParseMoveError;
