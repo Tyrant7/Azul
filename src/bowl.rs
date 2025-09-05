@@ -1,3 +1,5 @@
+use crate::{bowl, protocol::ProtocolFormat};
+
 pub type Tile = usize;
 
 #[derive(Debug)]
@@ -49,15 +51,19 @@ impl Clone for Bowl {
     }
 }
 
-impl std::fmt::Display for Bowl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for tile in self.tiles.iter() {
-            write!(f, "{}", tile)?;
-        }
+impl ProtocolFormat for Bowl {
+    fn fmt_human(&self) -> String {
         if self.tiles.is_empty() {
-            write!(f, "-")?;
+            return String::from("-");
         }
-        Ok(())
+        self.tiles
+            .iter()
+            .map(|t| format!("{}", t))
+            .collect::<String>()
+    }
+
+    fn fmt_uci_like(&self) -> String {
+        todo!()
     }
 }
 

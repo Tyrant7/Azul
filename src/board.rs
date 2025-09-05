@@ -1,4 +1,7 @@
-use crate::bowl::{IllegalMoveError, Row, Tile};
+use crate::{
+    bowl::{IllegalMoveError, Row, Tile},
+    protocol::ProtocolFormat,
+};
 
 pub const BOARD_DIMENSION: usize = 5;
 
@@ -269,32 +272,40 @@ impl Board {
     }
 }
 
-impl std::fmt::Display for Board {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProtocolFormat for Board {
+    fn fmt_human(&self) -> String {
+        let mut output = String::new();
         for ((h_idx, hold), row) in self.holds.iter().enumerate().zip(self.placed) {
-            write!(f, "{}", h_idx + 1)?;
-            write!(f, "{}", "  ".repeat(BOARD_DIMENSION - h_idx))?;
+            output.push_str(&(h_idx + 1).to_string());
+            output.push_str(&"  ".repeat(BOARD_DIMENSION - h_idx));
             for h in 0..h_idx + 1 {
                 if let Some(h) = hold.get(h).and_then(|x| *x) {
-                    write!(f, "{} ", h)?;
+                    output.push_str(&h.to_string());
+                    output.push(' ');
                 } else {
-                    write!(f, ". ")?;
+                    output.push_str(". ");
                 }
             }
-            write!(f, " | ")?;
+            output.push_str(" | ");
             for p in 0..BOARD_DIMENSION {
                 if let Some(p) = row.get(p).and_then(|x| *x) {
-                    write!(f, "{} ", p)?;
+                    output.push_str(&p.to_string());
+                    output.push(' ');
                 } else {
-                    write!(f, ". ")?;
+                    output.push_str(". ");
                 }
             }
-            writeln!(f)?;
+            output.push('\n');
         }
-        writeln!(f)?;
-        writeln!(f, "score: {}", self.score)?;
-        writeln!(f, "penalties: {}", self.penalties)?;
-        Ok(())
+        output.push_str(&format!("score: {}\n", self.score));
+        output.push_str(&format!("penalties: {}", self.penalties));
+        output.push('\n');
+        output.push('\n');
+        output
+    }
+
+    fn fmt_uci_like(&self) -> String {
+        todo!()
     }
 }
 

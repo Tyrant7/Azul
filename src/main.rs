@@ -13,19 +13,23 @@ mod protocol;
 use board::Board;
 use rand::seq::IndexedRandom;
 
-use crate::{bowl::Move, gamestate::GameState, protocol::Protocol};
+use crate::{
+    bowl::Move,
+    gamestate::GameState,
+    protocol::{Protocol, ProtocolFormat},
+};
 
 fn main() {
     let protocol = Protocol::extract();
 
     let mut gamestate = GameState::new(2);
     gamestate.setup();
-    println!("{}", gamestate);
+    println!("{}", gamestate.fmt_protocol(protocol));
 
-    listen_for_input(gamestate);
+    listen_for_input(gamestate, protocol);
 }
 
-fn listen_for_input(mut gamestate: GameState) {
+fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
     loop {
         let mut input = String::new();
         io::stdin()
@@ -43,7 +47,7 @@ fn listen_for_input(mut gamestate: GameState) {
 
         match gamestate.make_move(&choice) {
             Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{}", gamestate),
+            Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
         };
 
         if gamestate.is_game_over() {
@@ -54,7 +58,7 @@ fn listen_for_input(mut gamestate: GameState) {
     println!("Winner: player {}", gamestate.get_winner());
 }
 
-fn random_playout(mut gamestate: GameState) {
+fn random_playout(mut gamestate: GameState, protocol: Protocol) {
     loop {
         io::stdin()
             .read_line(&mut String::new())
@@ -70,7 +74,7 @@ fn random_playout(mut gamestate: GameState) {
 
         match gamestate.make_move(selection) {
             Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{}", gamestate),
+            Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
         };
 
         if gamestate.is_game_over() {

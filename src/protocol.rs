@@ -3,9 +3,12 @@ use std::{
     num::ParseIntError,
 };
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, ValueEnum, builder::Str};
 
-use crate::bowl::{Move, Row, Tile};
+use crate::{
+    bowl::{Move, Row, Tile},
+    protocol,
+};
 
 #[derive(Parser)]
 #[command(name = "azul-engine")]
@@ -26,6 +29,19 @@ impl Protocol {
         let cli = Cli::parse();
         println!("Running with protocol: {:?}", cli.protocol);
         cli.protocol
+    }
+}
+
+// TODO: finish this
+pub trait ProtocolFormat {
+    fn fmt_human(&self) -> String;
+    fn fmt_uci_like(&self) -> String;
+
+    fn fmt_protocol(&self, protocol: Protocol) -> String {
+        match protocol {
+            Protocol::Human => self.fmt_human(),
+            Protocol::UCILike => self.fmt_uci_like(),
+        }
     }
 }
 

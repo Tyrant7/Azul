@@ -3,6 +3,7 @@ use crate::{
     bag::Bag,
     board::BOARD_DIMENSION,
     bowl::{Bowl, IllegalMoveError, Move, Tile},
+    protocol::{Protocol, ProtocolFormat},
 };
 
 const TILES_PER_TYPE: usize = 20;
@@ -157,13 +158,15 @@ impl GameState {
     }
 }
 
-impl std::fmt::Display for GameState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProtocolFormat for GameState {
+    fn fmt_human(&self) -> String {
+        let mut output = String::new();
+
         // Board printouts
-        writeln!(f, "{}", "-".repeat(20))?;
+        output.push_str(&"-".repeat(20));
+        output.push('\n');
         for (i, board) in self.boards.iter().enumerate() {
-            writeln!(
-                f,
+            output.push_str(&format!(
                 "player {}{}",
                 i,
                 if self.active_player == i {
@@ -171,17 +174,21 @@ impl std::fmt::Display for GameState {
                 } else {
                     ""
                 }
-            )?;
-            board.fmt(f)?;
-            writeln!(f)?;
+            ));
+            output.push('\n');
+            output.push_str(&board.fmt_human());
         }
-        writeln!(f, "{}", "-".repeat(20))?;
+        output.push_str(&"-".repeat(20));
+        output.push('\n');
 
         // Bowl printouts
         for (i, bowl) in self.bowls.iter().enumerate() {
-            write!(f, "{}: {} | ", i, bowl)?;
+            output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
         }
+        output
+    }
 
-        Ok(())
+    fn fmt_uci_like(&self) -> String {
+        todo!()
     }
 }
