@@ -43,7 +43,7 @@ impl GameState {
         }
     }
 
-    pub fn from_azul_fen() -> Self {
+    pub fn from_azul_fen(azul_fen: &str) -> Self {
         todo!()
     }
 
@@ -94,12 +94,21 @@ impl GameState {
         e.x.  03440140321203
 
         -
+        Active player and first player token:
+
+        Finally, the active player and first player token owner and encoded at the end in order as two numbers,
+        once again, prefixed with a "|" character
+        e.x.  0 2 corresponds to the active player being player 0, and the first player token owner being player 2
+        If nobody owns the first player token, then "-" will be written in its place
+
+        -
         In full, a complete AzulFEN may look something like the following
 
         2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
         1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;
         | 0123003 - - - 0123 0001
         | 0133041230412404142
+        | 0 -
 
         AzulFENs should be outputted on a single-line, with a newline as the final character
         */
@@ -121,6 +130,16 @@ impl GameState {
         // Bag
         azul_fen.push_str("| ");
         azul_fen.push_str(&self.bag.fmt_uci_like());
+
+        // Active player and first player token
+        azul_fen.push_str("| ");
+        azul_fen.push_str(&self.active_player.to_string());
+        azul_fen.push(' ');
+        azul_fen.push_str(&if let Some(t) = self.first_token_owner {
+            t.to_string()
+        } else {
+            "-".to_string()
+        });
 
         azul_fen.push('\n');
         azul_fen
