@@ -43,6 +43,50 @@ impl GameState {
         }
     }
 
+    pub fn from_azul_fen() -> Self {
+        todo!()
+    }
+
+    pub fn get_azul_fen(&self) -> String {
+        todo!()
+
+        /*
+        AzulFEN works as follows:
+
+        Boards:
+
+        Each board's placed tiles are broken down into their own FEN-style string where numbers represent N empty spaces,
+        "/" denotes a new line, and a - represents a tile in that position
+        e.x.  5/5/5/5/5 is an empty board
+        while 5/5/2-2/5/5 would have a single tile in the centre
+
+        Each row of a board's hold section can be encoded with two numbers. The first represents the tile type in that row,
+        and the second representing the number of tiles. The encodings for each row are written sequentially
+        e.x.  0042000000 corresponds to 2 tiles of type 4 in the second row
+
+        For each board, the collected bonuses also need to be known. Each bonus type is encoded individually, in order,
+        and sequentially to one another, with a space in between where 0 is an uncollected bonus and 1 is a collected bonus.
+        e.x.  00001 00000 00000 corresponds to having collected only the horizontal bonus for the final row
+
+        The score and penalty tiles for each board and encoded and single numbers at the end of the FEN
+        e.x.  10 3 corresponds to 10 score and 3 penalty tiles
+
+        And finally, each board FEN is separated by a semi-colon
+
+        Altogether a typical board FEN may look something like follows:
+        2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
+
+        Bowls:
+
+        todo
+
+        Bag:
+
+        todo
+
+        */
+    }
+
     pub fn setup(&mut self) {
         // Fill each bowl, skipping the centre
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
@@ -189,6 +233,6 @@ impl ProtocolFormat for GameState {
     }
 
     fn fmt_uci_like(&self) -> String {
-        todo!()
+        self.get_azul_fen()
     }
 }
