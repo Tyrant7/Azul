@@ -56,14 +56,11 @@ impl ProtocolFormat for Bowl {
         if self.tiles.is_empty() {
             return String::from("-");
         }
-        self.tiles
-            .iter()
-            .map(|t| format!("{}", t))
-            .collect::<String>()
+        self.tiles.iter().map(|t| t.to_string()).collect()
     }
 
     fn fmt_uci_like(&self) -> String {
-        todo!()
+        self.fmt_human()
     }
 }
 

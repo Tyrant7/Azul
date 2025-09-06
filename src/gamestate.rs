@@ -48,11 +48,10 @@ impl GameState {
     }
 
     pub fn get_azul_fen(&self) -> String {
-        todo!()
-
         /*
         AzulFEN works as follows:
 
+        -
         Boards:
 
         Each board's placed tiles are broken down into their own FEN-style string where numbers represent N empty spaces,
@@ -64,8 +63,9 @@ impl GameState {
         and the second representing the number of tiles. The encodings for each row are written sequentially
         e.x.  0042000000 corresponds to 2 tiles of type 4 in the second row
 
-        For each board, the collected bonuses also need to be known. Each bonus type is encoded individually, in order,
-        and sequentially to one another, with a space in between where 0 is an uncollected bonus and 1 is a collected bonus.
+        For each board, the collected bonuses also need to be known. Each bonus type is encoded individually, in the order of
+        [row, column, tile_type], and sequentially to one another, with a space in between where 0 is an uncollected bonus
+        and 1 is a collected bonus.
         e.x.  00001 00000 00000 corresponds to having collected only the horizontal bonus for the final row
 
         The score and penalty tiles for each board and encoded and single numbers at the end of the FEN
@@ -76,15 +76,54 @@ impl GameState {
         Altogether a typical board FEN may look something like follows:
         2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
 
+        -
         Bowls:
 
-        todo
+        The bowl's section is prefixed with a "|" character
 
+        Each bowl is encoded as a sequence of numbers corresponding to tile types, each with a space in between
+        An empty bowl is denoted with a "-"
+        e.x.  000234 - 1132 would correspond to three unique bowls, one centre, one empty, and one full
+
+        -
         Bag:
 
-        todo
+        The bag's section is prefixed with another "|" character
 
+        The bag is simply listed as a sequence of numbers corresponding to tile types
+        e.x.  03440140321203
+
+        -
+        In full, a complete AzulFEN may look something like the following
+
+        2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
+        1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;
+        | 0123003 - - - 0123 0001
+        | 0133041230412404142
+
+        AzulFENs should be outputted on a single-line, with a newline as the final character
         */
+
+        // Boards
+        let mut azul_fen = String::new();
+        for board in self.boards.iter() {
+            azul_fen.push_str(&board.fmt_uci_like());
+            azul_fen.push(' ');
+        }
+
+        // Bowls
+        azul_fen.push_str("| ");
+        for bowl in self.bowls.iter() {
+            azul_fen.push_str(&bowl.fmt_uci_like());
+            azul_fen.push(' ');
+        }
+
+        // Bag
+        azul_fen.push_str("| ");
+        azul_fen.push_str(&self.bag.fmt_uci_like());
+
+        azul_fen.push('\n');
+        azul_fen
     }
 
     pub fn setup(&mut self) {

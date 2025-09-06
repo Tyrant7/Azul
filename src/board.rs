@@ -305,7 +305,60 @@ impl ProtocolFormat for Board {
     }
 
     fn fmt_uci_like(&self) -> String {
-        todo!()
+        // Format according to AzulFEN specifications
+        let mut output = String::new();
+
+        // Placed
+        let mut counter = 0;
+        for row in self.placed {
+            for tile in row {
+                if tile.is_some() {
+                    if counter > 0 {
+                        output.push_str(&counter.to_string());
+                    }
+                    output.push('-');
+                    counter = 0;
+                } else {
+                    counter += 1;
+                }
+            }
+            if counter > 0 {
+                output.push_str(&counter.to_string());
+            }
+            counter = 0;
+            output.push('/');
+        }
+        output.pop();
+
+        // Holds
+        output.push(' ');
+        for row in &self.holds {
+            let mut tiles = row.iter().flatten();
+            if let Some(t) = tiles.next() {
+                let count = 1 + tiles.count();
+                output.push_str(&t.to_string());
+                output.push_str(&count.to_string());
+            } else {
+                output.push_str("00");
+            }
+        }
+
+        // Bonuses
+        output.push(' ');
+        for row in self.bonuses.rows {
+            output.push_str(&if row { 1 } else { 0 }.to_string());
+        }
+        output.push(' ');
+        for column in self.bonuses.columns {
+            output.push_str(&if column { 1 } else { 0 }.to_string());
+        }
+        output.push(' ');
+        for tile_type in self.bonuses.tile_types {
+            output.push_str(&if tile_type { 1 } else { 0 }.to_string());
+        }
+
+        output.push_str(" ;");
+        output
     }
 }
 
