@@ -8,8 +8,12 @@ pub struct Bowl {
 }
 
 impl Bowl {
-    pub fn new() -> Bowl {
+    pub fn new() -> Self {
         Bowl { tiles: Vec::new() }
+    }
+
+    pub fn from_bowl_fen(bowl_fen: &str) -> Self {
+        todo!()
     }
 
     pub fn fill(&mut self, tiles: Vec<Tile>) {

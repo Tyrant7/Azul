@@ -19,7 +19,7 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new() -> Board {
+    pub fn new() -> Self {
         Board {
             holds: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
             placed: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
@@ -31,6 +31,18 @@ impl Board {
             penalties: 0,
             score: 0,
         }
+    }
+
+    pub fn from_board_fen(board_fen: &str) -> Self {
+        let mut board = Board::new();
+        let parts: Vec<_> = board_fen.trim().split_ascii_whitespace().collect();
+        match parts.as_slice() {
+            [placed, held, bonus_rows, bonus_cols, bonus_tile_types] => {
+                todo!()
+            }
+            _ => panic!("Invalid AzulFEN: incorrect board sections: {}", board_fen),
+        };
+        board
     }
 
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {

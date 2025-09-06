@@ -20,6 +20,11 @@ use crate::{
 };
 
 fn main() {
+    let old_gamestate = GameState::new(2);
+    let new_gamestate = GameState::from_azul_fen(&old_gamestate.get_azul_fen());
+
+    return;
+
     let protocol = Protocol::extract();
 
     let mut gamestate = GameState::new(2);

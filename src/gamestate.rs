@@ -44,6 +44,35 @@ impl GameState {
     }
 
     pub fn from_azul_fen(azul_fen: &str) -> Self {
+        let mut sections = azul_fen.split("| ");
+
+        let board_fens = sections
+            .next()
+            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+        let board_fens: Vec<_> = board_fens.split(";").collect();
+        let boards: Vec<_> = board_fens.into_iter().map(Board::from_board_fen).collect();
+
+        let bowl_fens = sections
+            .next()
+            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+        let bowls: Vec<_> = bowl_fens
+            .trim()
+            .split_ascii_whitespace()
+            .map(Bowl::from_bowl_fen)
+            .collect();
+
+        let bag_fen = sections
+            .next()
+            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+
+        todo!();
+
+        let active_player_and_first_token = sections
+            .next()
+            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+
+        todo!();
+
         todo!()
     }
 
