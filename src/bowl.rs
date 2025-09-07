@@ -13,7 +13,16 @@ impl Bowl {
     }
 
     pub fn from_bowl_fen(bowl_fen: &str) -> Self {
-        todo!()
+        if bowl_fen.chars().nth(0).expect("Invalid bowl FEN") == '-' {
+            Bowl { tiles: Vec::new() }
+        } else {
+            Bowl {
+                tiles: bowl_fen
+                    .chars()
+                    .map(|c| c.to_string().parse::<Tile>().expect("Invalid bowl FEN"))
+                    .collect(),
+            }
+        }
     }
 
     pub fn fill(&mut self, tiles: Vec<Tile>) {

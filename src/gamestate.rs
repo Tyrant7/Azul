@@ -48,8 +48,12 @@ impl GameState {
 
         let board_fens = sections
             .next()
-            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
-        let board_fens: Vec<_> = board_fens.split(";").collect();
+            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen))
+            .trim();
+        let mut board_fens: Vec<_> = board_fens.split(";").map(|f| f.trim()).collect();
+        // Last FEN will always be empty since we split at ";" and each board ends with one
+        board_fens.pop();
+        let board_fens = board_fens;
         let boards: Vec<_> = board_fens.into_iter().map(Board::from_board_fen).collect();
 
         let bowl_fens = sections
@@ -64,16 +68,35 @@ impl GameState {
         let bag_fen = sections
             .next()
             .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
-
-        todo!();
+        let items = bag_fen
+            .chars()
+            .map(|c| c.to_string().parse::<Tile>().expect("Invalid bag"))
+            .collect();
+        let bag = Bag::new(items);
 
         let active_player_and_first_token = sections
             .next()
             .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
-
-        todo!();
-
-        todo!()
+        let (active_player, first_token_owner) = match active_player_and_first_token
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            [active_player, first_token_owner] => (
+                active_player
+                    .parse::<usize>()
+                    .expect("Invalid active player"),
+                first_token_owner.parse::<usize>().map(Some).unwrap_or(None),
+            ),
+            _ => panic!("Invalid player section"),
+        };
+        GameState {
+            active_player,
+            boards,
+            bowls,
+            bag,
+            first_token_owner,
+        }
     }
 
     pub fn get_azul_fen(&self) -> String {

@@ -20,8 +20,11 @@ use crate::{
 };
 
 fn main() {
-    let old_gamestate = GameState::new(2);
+    let mut old_gamestate = GameState::new(2);
+    old_gamestate.setup();
     let new_gamestate = GameState::from_azul_fen(&old_gamestate.get_azul_fen());
+
+    println!("{:?}", new_gamestate);
 
     return;
 

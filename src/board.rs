@@ -35,10 +35,62 @@ impl Board {
 
     pub fn from_board_fen(board_fen: &str) -> Self {
         let mut board = Board::new();
-        let parts: Vec<_> = board_fen.trim().split_ascii_whitespace().collect();
+        let parts: Vec<_> = board_fen.trim().split_whitespace().collect();
         match parts.as_slice() {
-            [placed, held, bonus_rows, bonus_cols, bonus_tile_types] => {
-                todo!()
+            [
+                placed,
+                held,
+                bonus_rows,
+                bonus_cols,
+                bonus_tile_types,
+                score,
+                penalties,
+            ] => {
+                // Placed
+                let mut y = 0;
+                let mut x = 0;
+                for p in placed.chars() {
+                    if let Ok(step) = p.to_string().parse::<usize>() {
+                        x += step;
+                    } else if p == '-' {
+                        // TODO: Find tiletype by spot
+                        board.holds[y][x] = Some(0);
+                        x += 1;
+                    }
+                    if x >= BOARD_DIMENSION {
+                        y += 1;
+                        x = 0;
+                    }
+                }
+
+                // Held
+                // TODO
+
+                // Bonuses
+                board.bonuses = BonusTypes {
+                    rows: bonus_rows
+                        .chars()
+                        .map(|c| c == '1')
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("Invalid row bonus length"),
+                    columns: bonus_cols
+                        .chars()
+                        .map(|c| c == '1')
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("Invalid column bonus length"),
+                    tile_types: bonus_tile_types
+                        .chars()
+                        .map(|c| c == '1')
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("Invalid tile type bonus length"),
+                };
+
+                // Score and penalties
+                board.score = score.parse().expect("Invalid score");
+                board.penalties = penalties.parse().expect("Invalid penalites");
             }
             _ => panic!("Invalid AzulFEN: incorrect board sections: {}", board_fen),
         };
@@ -369,6 +421,13 @@ impl ProtocolFormat for Board {
             output.push_str(&if tile_type { 1 } else { 0 }.to_string());
         }
 
+        // Score and penalties
+        output.push(' ');
+        output.push_str(&self.score.to_string());
+        output.push(' ');
+        output.push_str(&self.penalties.to_string());
+
+        // End marker
         output.push_str(" ;");
         output
     }
