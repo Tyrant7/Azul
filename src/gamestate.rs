@@ -184,7 +184,7 @@ impl GameState {
         azul_fen.push_str(&self.bag.fmt_uci_like());
 
         // Active player and first player token
-        azul_fen.push_str("| ");
+        azul_fen.push_str(" | ");
         azul_fen.push_str(&self.active_player.to_string());
         azul_fen.push(' ');
         azul_fen.push_str(&if let Some(t) = self.first_token_owner {

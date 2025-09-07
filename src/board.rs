@@ -35,7 +35,7 @@ impl Board {
 
     pub fn from_board_fen(board_fen: &str) -> Self {
         let mut board = Board::new();
-        let parts: Vec<_> = board_fen.trim().split_whitespace().collect();
+        let parts: Vec<_> = board_fen.split_whitespace().collect();
         match parts.as_slice() {
             [
                 placed,
@@ -53,8 +53,7 @@ impl Board {
                     if let Ok(step) = p.to_string().parse::<usize>() {
                         x += step;
                     } else if p == '-' {
-                        // TODO: Find tiletype by spot
-                        board.holds[y][x] = Some(0);
+                        board.holds[y][x] = Some(Board::get_tile_type_at_pos(y, x));
                         x += 1;
                     }
                     if x >= BOARD_DIMENSION {
@@ -64,7 +63,16 @@ impl Board {
                 }
 
                 // Held
-                // TODO
+                for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
+                    let tile_type = h[0].to_string().parse::<Tile>().expect("Invalid held");
+                    let tile_count = h[1].to_string().parse::<Tile>().expect("Invalid held");
+                    if tile_count == 0 {
+                        continue;
+                    }
+                    for n in 0..tile_count {
+                        board.holds[i][n] = Some(tile_type);
+                    }
+                }
 
                 // Bonuses
                 board.bonuses = BonusTypes {
@@ -306,6 +314,10 @@ impl Board {
         // 3 4 0 1 2
         // ...
         (tile_type + row_idx) % BOARD_DIMENSION
+    }
+
+    fn get_tile_type_at_pos(row: usize, col: usize) -> Tile {
+        ((col + BOARD_DIMENSION - row) % BOARD_DIMENSION) as Tile
     }
 
     fn get_penalty_point_value(penalty_tiles: usize) -> usize {
