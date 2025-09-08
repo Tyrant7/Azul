@@ -6,10 +6,18 @@ use crate::{
     protocol::{ParseGameStateError, ProtocolFormat},
 };
 
+/// The number of tiles of each type to be added to the bag at the beginning of the game, and to be
+/// used for reference during round setup
 const TILES_PER_TYPE: usize = 20;
+
+/// The number of tiles that each bowl is restocked to contain during the roubnd setup
 const BOWL_CAPACITY: usize = 4;
+
+/// The index of the centre tile space. Is area is not technically a bowl in the original game, but for
+/// simplicity of the code, this decision has been made here.
 const CENTRE_BOWL_IDX: usize = 0;
 
+// TODO: Full docs for this file
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
@@ -36,7 +44,7 @@ impl GameState {
     pub fn new(players: usize) -> Self {
         GameState {
             active_player: 0,
-            boards: vec![Board::new(); players],
+            boards: vec![Board::default(); players],
             bowls: vec![Bowl::default(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
             first_token_owner: None,

@@ -9,7 +9,7 @@ const ROW_BONUS: usize = 2;
 const COLUMN_BONUS: usize = 7;
 const TILE_TYPE_BONUS: usize = 10;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
@@ -19,22 +19,8 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new() -> Self {
-        Board {
-            holds: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
-            placed: [[None; BOARD_DIMENSION]; BOARD_DIMENSION],
-            bonuses: BonusTypes {
-                rows: [false; BOARD_DIMENSION],
-                columns: [false; BOARD_DIMENSION],
-                tile_types: [false; BOARD_DIMENSION],
-            },
-            penalties: 0,
-            score: 0,
-        }
-    }
-
     pub fn from_board_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
-        let mut board = Board::new();
+        let mut board = Board::default();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
         match parts.as_slice() {
             [
@@ -451,7 +437,7 @@ impl ProtocolFormat for Board {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct BonusTypes {
     pub rows: [bool; BOARD_DIMENSION],
     pub columns: [bool; BOARD_DIMENSION],
