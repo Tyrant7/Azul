@@ -37,6 +37,9 @@ pub trait ProtocolFormat {
 }
 
 #[derive(Debug)]
+pub struct ParseGameStateError;
+
+#[derive(Debug)]
 pub struct ParseMoveError;
 
 impl From<ParseIntError> for ParseMoveError {

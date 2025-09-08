@@ -1,4 +1,4 @@
-use crate::protocol::ProtocolFormat;
+use crate::protocol::{ParseGameStateError, ProtocolFormat};
 
 pub type Tile = usize;
 
@@ -12,16 +12,16 @@ impl Bowl {
         Bowl { tiles: Vec::new() }
     }
 
-    pub fn from_bowl_fen(bowl_fen: &str) -> Self {
-        if bowl_fen.chars().nth(0).expect("Invalid bowl FEN") == '-' {
-            Bowl { tiles: Vec::new() }
+    pub fn from_bowl_fen(bowl_fen: &str) -> Result<Self, ParseGameStateError> {
+        if bowl_fen.chars().nth(0).ok_or(ParseGameStateError)? == '-' {
+            Ok(Bowl { tiles: Vec::new() })
         } else {
-            Bowl {
+            Ok(Bowl {
                 tiles: bowl_fen
                     .chars()
-                    .map(|c| c.to_string().parse::<Tile>().expect("Invalid bowl FEN"))
-                    .collect(),
-            }
+                    .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
+                    .collect::<Result<Vec<_>, ParseGameStateError>>()?,
+            })
         }
     }
 

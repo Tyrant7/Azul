@@ -1,6 +1,6 @@
 use crate::{
     bowl::{IllegalMoveError, Row, Tile},
-    protocol::ProtocolFormat,
+    protocol::{ParseGameStateError, ProtocolFormat},
 };
 
 pub const BOARD_DIMENSION: usize = 5;
@@ -33,7 +33,7 @@ impl Board {
         }
     }
 
-    pub fn from_board_fen(board_fen: &str) -> Self {
+    pub fn from_board_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut board = Board::new();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
         match parts.as_slice() {
@@ -102,7 +102,7 @@ impl Board {
             }
             _ => panic!("Invalid AzulFEN: incorrect board sections: {}", board_fen),
         };
-        board
+        Ok(board)
     }
 
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {

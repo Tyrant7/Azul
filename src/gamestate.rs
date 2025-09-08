@@ -3,7 +3,7 @@ use crate::{
     bag::Bag,
     board::BOARD_DIMENSION,
     bowl::{Bowl, IllegalMoveError, Move, Tile},
-    protocol::ProtocolFormat,
+    protocol::{ParseGameStateError, ProtocolFormat},
 };
 
 const TILES_PER_TYPE: usize = 20;
@@ -43,40 +43,34 @@ impl GameState {
         }
     }
 
-    pub fn from_azul_fen(azul_fen: &str) -> Self {
+    pub fn from_azul_fen(azul_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut sections = azul_fen.split("| ");
 
-        let board_fens = sections
-            .next()
-            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen))
-            .trim();
+        let board_fens = sections.next().ok_or(ParseGameStateError)?.trim();
         let mut board_fens: Vec<_> = board_fens.split(";").map(|f| f.trim()).collect();
         // Last FEN will always be empty since we split at ";" and each board ends with one
         board_fens.pop();
         let board_fens = board_fens;
-        let boards: Vec<_> = board_fens.into_iter().map(Board::from_board_fen).collect();
+        let boards = board_fens
+            .into_iter()
+            .map(Board::from_board_fen)
+            .collect::<Result<Vec<_>, ParseGameStateError>>()?;
 
-        let bowl_fens = sections
-            .next()
-            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
-        let bowls: Vec<_> = bowl_fens
+        let bowl_fens = sections.next().ok_or(ParseGameStateError)?;
+        let bowls = bowl_fens
             .trim()
             .split_ascii_whitespace()
             .map(Bowl::from_bowl_fen)
-            .collect();
+            .collect::<Result<Vec<_>, ParseGameStateError>>()?;
 
-        let bag_fen = sections
-            .next()
-            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+        let bag_fen = sections.next().ok_or(ParseGameStateError)?;
         let items = bag_fen
             .chars()
-            .map(|c| c.to_string().parse::<Tile>().expect("Invalid bag"))
-            .collect();
+            .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
+            .collect::<Result<Vec<_>, ParseGameStateError>>()?;
         let bag = Bag::new(items);
 
-        let active_player_and_first_token = sections
-            .next()
-            .unwrap_or_else(|| panic!("Invalid AzulFEN: {}", azul_fen));
+        let active_player_and_first_token = sections.next().ok_or(ParseGameStateError)?;
         let (active_player, first_token_owner) = match active_player_and_first_token
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -85,18 +79,18 @@ impl GameState {
             [active_player, first_token_owner] => (
                 active_player
                     .parse::<usize>()
-                    .expect("Invalid active player"),
+                    .or(Err(ParseGameStateError))?,
                 first_token_owner.parse::<usize>().map(Some).unwrap_or(None),
             ),
-            _ => panic!("Invalid player section"),
+            _ => return Err(ParseGameStateError),
         };
-        GameState {
+        Ok(GameState {
             active_player,
             boards,
             bowls,
             bag,
             first_token_owner,
-        }
+        })
     }
 
     pub fn get_azul_fen(&self) -> String {
