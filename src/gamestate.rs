@@ -1,5 +1,5 @@
 use crate::{
-    BOWL_CAPACITY, Board,
+    Board,
     bag::Bag,
     board::BOARD_DIMENSION,
     bowl::{Bowl, IllegalMoveError, Move, Tile},
@@ -7,7 +7,7 @@ use crate::{
 };
 
 const TILES_PER_TYPE: usize = 20;
-
+const BOWL_CAPACITY: usize = 4;
 const CENTRE_BOWL_IDX: usize = 0;
 
 #[derive(Debug)]
@@ -37,7 +37,7 @@ impl GameState {
         GameState {
             active_player: 0,
             boards: vec![Board::new(); players],
-            bowls: vec![Bowl::new(); get_bowl_count(players)],
+            bowls: vec![Bowl::default(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset()),
             first_token_owner: None,
         }

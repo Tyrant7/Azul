@@ -2,16 +2,12 @@ use crate::protocol::{ParseGameStateError, ProtocolFormat};
 
 pub type Tile = usize;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Bowl {
     tiles: Vec<Tile>,
 }
 
 impl Bowl {
-    pub fn new() -> Self {
-        Bowl { tiles: Vec::new() }
-    }
-
     pub fn from_bowl_fen(bowl_fen: &str) -> Result<Self, ParseGameStateError> {
         if bowl_fen.chars().nth(0).ok_or(ParseGameStateError)? == '-' {
             Ok(Bowl { tiles: Vec::new() })

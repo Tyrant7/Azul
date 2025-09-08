@@ -1,15 +1,14 @@
 // Rules adapted from: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
 #![allow(dead_code)]
 
-const BOWL_CAPACITY: usize = 4;
-
 use std::io;
 
 mod bag;
-mod board;
-mod bowl;
-mod gamestate;
 mod protocol;
+
+pub mod board;
+pub mod bowl;
+pub mod gamestate;
 
 use board::Board;
 use rand::seq::IndexedRandom;
