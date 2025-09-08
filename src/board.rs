@@ -64,8 +64,14 @@ impl Board {
 
                 // Held
                 for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
-                    let tile_type = h[0].to_string().parse::<Tile>().expect("Invalid held");
-                    let tile_count = h[1].to_string().parse::<Tile>().expect("Invalid held");
+                    let tile_type = h[0]
+                        .to_string()
+                        .parse::<Tile>()
+                        .or(Err(ParseGameStateError))?;
+                    let tile_count = h[1]
+                        .to_string()
+                        .parse::<Tile>()
+                        .or(Err(ParseGameStateError))?;
                     if tile_count == 0 {
                         continue;
                     }
@@ -81,26 +87,26 @@ impl Board {
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
-                        .expect("Invalid row bonus length"),
+                        .or(Err(ParseGameStateError))?,
                     columns: bonus_cols
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
-                        .expect("Invalid column bonus length"),
+                        .or(Err(ParseGameStateError))?,
                     tile_types: bonus_tile_types
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
-                        .expect("Invalid tile type bonus length"),
+                        .or(Err(ParseGameStateError))?,
                 };
 
                 // Score and penalties
-                board.score = score.parse().expect("Invalid score");
-                board.penalties = penalties.parse().expect("Invalid penalites");
+                board.score = score.parse().or(Err(ParseGameStateError))?;
+                board.penalties = penalties.parse().or(Err(ParseGameStateError))?;
             }
-            _ => panic!("Invalid AzulFEN: incorrect board sections: {}", board_fen),
+            _ => return Err(ParseGameStateError),
         };
         Ok(board)
     }

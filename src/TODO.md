@@ -3,7 +3,6 @@
 ## Movegen
 - Finish and document UAI implementation (universal Azul interface)
     - Do some minor refactors to do away with the protocol formatting stuff (it's messy and not well-suited for what is accomplishes)
-    - Better error handling for AzulFEN reading
 - UAI and AzulFEN documentation and docstrings overall
 - Implement tests
 - Cut out all the CLI code and put that into a separate project, importing the rest
