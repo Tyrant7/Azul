@@ -7,10 +7,10 @@ use crate::{
 };
 
 /// The number of tiles of each type to be added to the bag at the beginning of the game, and to be
-/// used for reference during round setup
+/// used for reference during round setup.
 const TILES_PER_TYPE: usize = 20;
 
-/// The number of tiles that each bowl is restocked to contain during the roubnd setup
+/// The number of tiles that each bowl is restocked to contain during the roubnd setup.
 const BOWL_CAPACITY: usize = 4;
 
 /// The index of the centre tile space. Is area is not technically a bowl in the original game, but for

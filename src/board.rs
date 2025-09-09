@@ -3,12 +3,20 @@ use crate::{
     protocol::{ParseGameStateError, ProtocolFormat},
 };
 
+/// The width and height of the place area of the board. A single constant is used as
+/// all boards must be a square.
 pub const BOARD_DIMENSION: usize = 5;
 
+/// The score bonus given when a board row has been completely filled.
 const ROW_BONUS: usize = 2;
+
+/// The score bonus given when a board colmun has been completely filled.
 const COLUMN_BONUS: usize = 7;
+
+/// The score bonus given when all boardspaces for a given tile type have been filled.
 const TILE_TYPE_BONUS: usize = 10;
 
+// TODO: Full docs
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
