@@ -252,14 +252,19 @@ impl GameState {
         Ok(())
     }
 
+    /// Returns true if all bowls are empty, otherwise false.
     pub fn round_over(&self) -> bool {
         self.bowls.iter().all(|b| b.get_tile_types().is_empty())
     }
 
+    /// Returns true if any player has completed a horizontal line on their board.
     pub fn is_game_over(&self) -> bool {
         self.boards.iter().any(|b| b.count_horizontal_lines() > 0)
     }
 
+    /// Gets the index of the board with the highest score.
+    /// In the case of a tie, the number of horizontal lines are used.
+    /// If there is still a tie, the lower-indexed player will be returned.  
     pub fn get_winner(&self) -> usize {
         self.boards
             .iter()
