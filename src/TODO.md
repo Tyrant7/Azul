@@ -1,7 +1,11 @@
 # TODO
 
 ## Movegen
-- UAI and AzulFEN documentation and docstrings overall
+- Finish docstrings
+- Use a custom markdown file for UAI
+  - Move specifications
+  - Commands
+  - AzulFEN
 - Implement tests
 - Cut out all the CLI code and put that into a separate project, importing the rest
   as an Azul-movegen crate

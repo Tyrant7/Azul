@@ -16,7 +16,7 @@ const COLUMN_BONUS: usize = 7;
 /// The score bonus given when all boardspaces for a given tile type have been filled.
 const TILE_TYPE_BONUS: usize = 10;
 
-// TODO: Full docs
+/// A player's board.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
@@ -27,6 +27,9 @@ pub struct Board {
 }
 
 impl Board {
+    /// Generates a board matching the given board component of a given AzulFEN.
+    /// It is important to note that the board component is not an entire FEN.
+    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
     pub fn from_board_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut board = Board::default();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
@@ -105,6 +108,8 @@ impl Board {
         Ok(board)
     }
 
+    /// Returns an iterator over all tiles on this board.
+    /// Includes both the held and placed tiles.
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {
         self.holds
             .iter()
@@ -113,6 +118,8 @@ impl Board {
             .filter_map(|&t| t)
     }
 
+    /// Returns a vec of all rows which do not yet contain the given tile type, both within
+    /// the held and placed positions.
     pub fn get_valid_rows_for_tile_type(&self, tile_type: Tile) -> Vec<Row> {
         let mut valid_rows = Vec::new();
         for (row_idx, hold) in self.holds.iter().enumerate() {
@@ -138,6 +145,12 @@ impl Board {
         valid_rows
     }
 
+    /// Adds the given count of tiles of the given type to the hold positions at the given row index.
+    /// Also accepts a penalty to apply to this board.
+    /// ## Notes:
+    /// - The penalty should only include special cases such as accepting the central tile, and not
+    ///   cases such as overflow, which are handled by this method.
+    /// - For the sake of simplicity, penalties are measured in tiles, and not score value.
     pub fn hold_tiles(
         &mut self,
         tile_type: Tile,
@@ -179,6 +192,12 @@ impl Board {
         Ok(())
     }
 
+    /// Handles all end-of-round actions for this board, including:
+    /// - Freeing the tiles in each completed held row
+    /// - Adding appropriate tiles to the placed positions
+    /// - Ordinary tile scoring
+    /// - Bonus scoring and tracking collected bonuses
+    /// - Penalty application and penalty resets
     pub fn place_holds(&mut self) {
         for (row_idx, row) in self.holds.iter_mut().enumerate() {
             let tiles_in_row = row.iter().filter(|tile| tile.is_some()).count();
@@ -251,6 +270,8 @@ impl Board {
         self.penalties = 0;
     }
 
+    /// Grants this board score for each bonus it satisfies that has not yet been collected,
+    /// then marks such bonuses as collected.
     fn apply_uncollected_bonuses(&mut self) {
         // Start with rows
         for (i, claimed) in self.bonuses.rows.iter_mut().enumerate() {
@@ -296,6 +317,7 @@ impl Board {
         }
     }
 
+    /// Counts the number of complete horizontal lines in the placed section of this board.
     pub fn count_horizontal_lines(&self) -> usize {
         self.placed
             .iter()
@@ -303,27 +325,33 @@ impl Board {
             .count()
     }
 
+    /// Score getter
     pub fn get_score(&self) -> usize {
         self.score
     }
 
+    /// Gets the index of the column where a tile in a given row of a given type should be placed.
+    ///
+    /// If we consider the board from a top view, tiles simply cycle by index and type:
+    /// - 0 1 2 3 4
+    /// - 4 0 1 2 3
+    /// - 3 4 0 1 2
+    /// - ...
     fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
-        // Tiles simply cycle by index
-        // 0 1 2 3 4
-        // 4 0 1 2 3
-        // 3 4 0 1 2
-        // ...
         (tile_type + row_idx) % BOARD_DIMENSION
     }
 
+    /// Returns the type of tile that can be placed at `row` and `col` on this board.
     fn get_tile_type_at_pos(row: usize, col: usize) -> Tile {
         ((col + BOARD_DIMENSION - row) % BOARD_DIMENSION) as Tile
     }
 
+    /// Returns the number of penalty points associated with the given number of penalty tiles.  
     fn get_penalty_point_value(penalty_tiles: usize) -> usize {
         [1, 1, 2, 2, 2, 3, 3].iter().take(penalty_tiles).sum()
     }
 
+    /// Counts the number of tiles in any given direction (`drow` and `dcol`) from a source `row` and `col`.
     fn count_in_direction(
         placed: &[[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         mut row: isize,
@@ -445,6 +473,9 @@ impl ProtocolFormat for Board {
     }
 }
 
+/// Struct for nicely packaging bonus types together for a board.
+/// Each property simply represents whether or not the bonus for that
+/// row, column, or tile type has been collected.
 #[derive(Debug, Clone, Copy, Default)]
 struct BonusTypes {
     pub rows: [bool; BOARD_DIMENSION],
