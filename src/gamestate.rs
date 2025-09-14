@@ -17,7 +17,8 @@ const BOWL_CAPACITY: usize = 4;
 /// simplicity of the code, this decision has been made here.
 const CENTRE_BOWL_IDX: usize = 0;
 
-// TODO: Full docs for this file
+/// Represents a complete gamestate for a given number of players.
+/// Supports generation from and serialization to a custom AzulFEN [TODO: link].
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
@@ -27,10 +28,13 @@ pub struct GameState {
     first_token_owner: Option<usize>,
 }
 
+/// Bowl formula is given by 2n + 1, with an additional bowl for the centre space.
 fn get_bowl_count(players: usize) -> usize {
     players * 2 + 2
 }
 
+/// Generates a default tileset for a game setup.
+/// By default, [TILES_PER_TYPE] of each tile type are given.
 fn get_default_tileset() -> Vec<Tile> {
     let mut tiles = Vec::new();
     // There should always be the same number of tiles as board width
@@ -41,6 +45,7 @@ fn get_default_tileset() -> Vec<Tile> {
 }
 
 impl GameState {
+    /// Creates a new gamestate for the given number of players.
     pub fn new(players: usize) -> Self {
         GameState {
             active_player: 0,
@@ -51,6 +56,9 @@ impl GameState {
         }
     }
 
+    /// Parses the given AzulFEN into a gamestate.
+    /// Will error if the given AzulFEN is invalid.
+    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
     pub fn from_azul_fen(azul_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut sections = azul_fen.split("| ");
 
@@ -101,72 +109,9 @@ impl GameState {
         })
     }
 
+    /// Returns the AzulFEN encoding for this game state.
+    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
     pub fn get_azul_fen(&self) -> String {
-        /*
-        AzulFEN works as follows:
-
-        -
-        Boards:
-
-        Each board's placed tiles are broken down into their own FEN-style string where numbers represent N empty spaces,
-        "/" denotes a new line, and a - represents a tile in that position
-        e.x.  5/5/5/5/5 is an empty board
-        while 5/5/2-2/5/5 would have a single tile in the centre
-
-        Each row of a board's hold section can be encoded with two numbers. The first represents the tile type in that row,
-        and the second representing the number of tiles. The encodings for each row are written sequentially
-        e.x.  0042000000 corresponds to 2 tiles of type 4 in the second row
-
-        For each board, the collected bonuses also need to be known. Each bonus type is encoded individually, in the order of
-        [row, column, tile_type], and sequentially to one another, with a space in between where 0 is an uncollected bonus
-        and 1 is a collected bonus.
-        e.x.  00001 00000 00000 corresponds to having collected only the horizontal bonus for the final row
-
-        The score and penalty tiles for each board and encoded and single numbers at the end of the FEN
-        e.x.  10 3 corresponds to 10 score and 3 penalty tiles
-
-        And finally, each board FEN is separated by a semi-colon
-
-        Altogether a typical board FEN may look something like follows:
-        2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
-
-        -
-        Bowls:
-
-        The bowl's section is prefixed with a "|" character
-
-        Each bowl is encoded as a sequence of numbers corresponding to tile types, each with a space in between
-        An empty bowl is denoted with a "-"
-        e.x.  000234 - 1132 would correspond to three unique bowls, one centre, one empty, and one full
-
-        -
-        Bag:
-
-        The bag's section is prefixed with another "|" character
-
-        The bag is simply listed as a sequence of numbers corresponding to tile types
-        e.x.  03440140321203
-
-        -
-        Active player and first player token:
-
-        Finally, the active player and first player token owner and encoded at the end in order as two numbers,
-        once again, prefixed with a "|" character
-        e.x.  0 2 corresponds to the active player being player 0, and the first player token owner being player 2
-        If nobody owns the first player token, then "-" will be written in its place
-
-        -
-        In full, a complete AzulFEN may look something like the following
-
-        2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
-        1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;
-        | 0123003 - - - 0123 0001
-        | 0133041230412404142
-        | 0 -
-
-        AzulFENs should be outputted on a single-line, with a newline as the final character
-        */
-
         // Boards
         let mut azul_fen = String::new();
         for board in self.boards.iter() {
@@ -199,7 +144,19 @@ impl GameState {
         azul_fen
     }
 
-    pub fn setup(&mut self) {
+    /// Performs a variety of tasks to setup the beginning of a round, including
+    /// - Placing held tiles
+    /// - Applying previous round penalties
+    /// - Refilling bowls
+    /// - Restocking the bag, if necessary
+    /// - Determining the first player
+    /// - Resetting the first player token holder
+    pub fn setup_next_round(&mut self) {
+        // Place each board's held tiles and apply penalties
+        for board in self.boards.iter_mut() {
+            board.place_holds();
+        }
+
         // Fill each bowl, skipping the centre
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
         for bowl in bowls.iter_mut().skip(1) {
@@ -232,6 +189,8 @@ impl GameState {
         self.first_token_owner = None;
     }
 
+    /// Returns a list of all valid moves in the current gamestate.
+    /// This list includes penalizing moves, such as placing tiles to the floor position.
     pub fn get_valid_moves(&self) -> Vec<Move> {
         let board = self.boards.get(self.active_player).expect("Invalid player");
         let mut moves = Vec::new();
@@ -249,6 +208,8 @@ impl GameState {
         moves
     }
 
+    /// Makes a move, modifying the current gamestate.
+    /// Will error if the given move is illegal.
     pub fn make_move(&mut self, choice: &Move) -> Result<(), IllegalMoveError> {
         let valid_moves = self.get_valid_moves();
         if !valid_moves.contains(choice) {
@@ -288,16 +249,11 @@ impl GameState {
         if self.active_player >= self.boards.len() {
             self.active_player = 0;
         }
-
-        // If neither player can play, or if we have no more tiles
-        // let's setup for the next round
-        if self.bowls.iter().all(|b| b.get_tile_types().is_empty()) {
-            for board in self.boards.iter_mut() {
-                board.place_holds();
-            }
-            self.setup();
-        }
         Ok(())
+    }
+
+    pub fn round_over(&self) -> bool {
+        self.bowls.iter().all(|b| b.get_tile_types().is_empty())
     }
 
     pub fn is_game_over(&self) -> bool {

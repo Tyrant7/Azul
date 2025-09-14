@@ -23,7 +23,7 @@ fn main() {
     let protocol = Protocol::extract();
 
     let mut gamestate = GameState::new(2);
-    gamestate.setup();
+    gamestate.setup_next_round();
     println!("{}", gamestate.fmt_protocol(protocol));
 
     listen_for_input(gamestate, protocol);
@@ -49,6 +49,10 @@ fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
         };
+
+        if gamestate.round_over() {
+            gamestate.setup_next_round();
+        }
 
         if gamestate.is_game_over() {
             break;
@@ -76,6 +80,10 @@ fn random_playout(mut gamestate: GameState, protocol: Protocol) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
         };
+
+        if gamestate.round_over() {
+            gamestate.setup_next_round();
+        }
 
         if gamestate.is_game_over() {
             break;

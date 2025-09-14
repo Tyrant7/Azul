@@ -89,7 +89,7 @@ impl ProtocolFormat for Bowl {
     }
 }
 
-/// This struct represents a move in gameplay.
+/// A move in gameplay.
 /// # Properties
 /// * `bowl`: the index of the selected bowl.
 /// * `tile_type`: the type of tile taken from the bowl.
