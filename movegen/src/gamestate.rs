@@ -4,7 +4,6 @@ use crate::{
     board::BOARD_DIMENSION,
     bowl::Bowl,
     game_move::{IllegalMoveError, Move},
-    protocol::{ParseGameStateError, ProtocolFormat},
 };
 
 /// The number of tiles of each type to be added to the bag at the beginning of the game, and to be
@@ -273,40 +272,5 @@ impl GameState {
             .max_by_key(|(_, b)| (b.get_score(), b.count_horizontal_lines()))
             .unwrap()
             .0
-    }
-}
-
-impl ProtocolFormat for GameState {
-    fn fmt_human(&self) -> String {
-        let mut output = String::new();
-
-        // Board printouts
-        output.push_str(&"-".repeat(20));
-        output.push('\n');
-        for (i, board) in self.boards.iter().enumerate() {
-            output.push_str(&format!(
-                "player {}{}",
-                i,
-                if self.active_player == i {
-                    " (active)"
-                } else {
-                    ""
-                }
-            ));
-            output.push('\n');
-            output.push_str(&board.fmt_human());
-        }
-        output.push_str(&"-".repeat(20));
-        output.push('\n');
-
-        // Bowl printouts
-        for (i, bowl) in self.bowls.iter().enumerate() {
-            output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
-        }
-        output
-    }
-
-    fn fmt_uci_like(&self) -> String {
-        self.get_azul_fen()
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     Tile,
+    display::{ParseGameStateError, ProtocolFormat},
     game_move::IllegalMoveError,
-    protocol::{ParseGameStateError, ProtocolFormat},
     row::Row,
 };
 
@@ -29,87 +29,6 @@ pub struct Board {
 }
 
 impl Board {
-    /// Generates a board matching the given board component of a given AzulFEN.
-    /// It is important to note that the board component is not an entire FEN.
-    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
-    pub fn from_board_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
-        let mut board = Board::default();
-        let parts: Vec<_> = board_fen.split_whitespace().collect();
-        match parts.as_slice() {
-            [
-                placed,
-                held,
-                bonus_rows,
-                bonus_cols,
-                bonus_tile_types,
-                score,
-                penalties,
-            ] => {
-                // Placed
-                let mut y = 0;
-                let mut x = 0;
-                for p in placed.chars() {
-                    if let Ok(step) = p.to_string().parse::<usize>() {
-                        x += step;
-                    } else if p == '-' {
-                        board.holds[y][x] = Some(Board::get_tile_type_at_pos(y, x));
-                        x += 1;
-                    }
-                    if x >= BOARD_DIMENSION {
-                        y += 1;
-                        x = 0;
-                    }
-                }
-
-                // Held
-                for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
-                    let tile_type = h[0]
-                        .to_string()
-                        .parse::<Tile>()
-                        .or(Err(ParseGameStateError))?;
-                    let tile_count = h[1]
-                        .to_string()
-                        .parse::<Tile>()
-                        .or(Err(ParseGameStateError))?;
-                    if tile_count == 0 {
-                        continue;
-                    }
-                    for n in 0..tile_count {
-                        board.holds[i][n] = Some(tile_type);
-                    }
-                }
-
-                // Bonuses
-                board.bonuses = BonusTypes {
-                    rows: bonus_rows
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                    columns: bonus_cols
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                    tile_types: bonus_tile_types
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                };
-
-                // Score and penalties
-                board.score = score.parse().or(Err(ParseGameStateError))?;
-                board.penalties = penalties.parse().or(Err(ParseGameStateError))?;
-            }
-            _ => return Err(ParseGameStateError),
-        };
-        Ok(board)
-    }
-
     /// Returns an iterator over all tiles on this board.
     /// Includes both the held and placed tiles.
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {
@@ -375,103 +294,6 @@ impl Board {
             }
         }
         count
-    }
-}
-
-impl ProtocolFormat for Board {
-    fn fmt_human(&self) -> String {
-        let mut output = String::new();
-        for ((h_idx, hold), row) in self.holds.iter().enumerate().zip(self.placed) {
-            output.push_str(&(h_idx + 1).to_string());
-            output.push_str(&"  ".repeat(BOARD_DIMENSION - h_idx));
-            for h in 0..h_idx + 1 {
-                if let Some(h) = hold.get(h).and_then(|x| *x) {
-                    output.push_str(&h.to_string());
-                    output.push(' ');
-                } else {
-                    output.push_str(". ");
-                }
-            }
-            output.push_str(" | ");
-            for p in 0..BOARD_DIMENSION {
-                if let Some(p) = row.get(p).and_then(|x| *x) {
-                    output.push_str(&p.to_string());
-                    output.push(' ');
-                } else {
-                    output.push_str(". ");
-                }
-            }
-            output.push('\n');
-        }
-        output.push_str(&format!("score: {}\n", self.score));
-        output.push_str(&format!("penalties: {}", self.penalties));
-        output.push('\n');
-        output.push('\n');
-        output
-    }
-
-    fn fmt_uci_like(&self) -> String {
-        // Format according to AzulFEN specifications
-        let mut output = String::new();
-
-        // Placed
-        let mut counter = 0;
-        for row in self.placed {
-            for tile in row {
-                if tile.is_some() {
-                    if counter > 0 {
-                        output.push_str(&counter.to_string());
-                    }
-                    output.push('-');
-                    counter = 0;
-                } else {
-                    counter += 1;
-                }
-            }
-            if counter > 0 {
-                output.push_str(&counter.to_string());
-            }
-            counter = 0;
-            output.push('/');
-        }
-        output.pop();
-
-        // Holds
-        output.push(' ');
-        for row in &self.holds {
-            let mut tiles = row.iter().flatten();
-            if let Some(t) = tiles.next() {
-                let count = 1 + tiles.count();
-                output.push_str(&t.to_string());
-                output.push_str(&count.to_string());
-            } else {
-                output.push_str("00");
-            }
-        }
-
-        // Bonuses
-        output.push(' ');
-        for row in self.bonuses.rows {
-            output.push_str(&if row { 1 } else { 0 }.to_string());
-        }
-        output.push(' ');
-        for column in self.bonuses.columns {
-            output.push_str(&if column { 1 } else { 0 }.to_string());
-        }
-        output.push(' ');
-        for tile_type in self.bonuses.tile_types {
-            output.push_str(&if tile_type { 1 } else { 0 }.to_string());
-        }
-
-        // Score and penalties
-        output.push(' ');
-        output.push_str(&self.score.to_string());
-        output.push(' ');
-        output.push_str(&self.penalties.to_string());
-
-        // End marker
-        output.push_str(" ;");
-        output
     }
 }
 

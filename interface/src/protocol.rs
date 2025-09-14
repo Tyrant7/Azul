@@ -25,21 +25,6 @@ impl Protocol {
     }
 }
 
-pub trait ProtocolFormat {
-    fn fmt_human(&self) -> String;
-    fn fmt_uci_like(&self) -> String;
-
-    fn fmt_protocol(&self, protocol: Protocol) -> String {
-        match protocol {
-            Protocol::Human => self.fmt_human(),
-            Protocol::UCILike => self.fmt_uci_like(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ParseGameStateError;
-
 #[derive(Debug)]
 pub struct ParseMoveError;
 

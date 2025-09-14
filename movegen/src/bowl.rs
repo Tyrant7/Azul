@@ -1,7 +1,4 @@
-use crate::{
-    Tile,
-    protocol::{ParseGameStateError, ProtocolFormat},
-};
+use crate::Tile;
 
 /// A structure for holding groups of tiles according to Azul's bowl rules.
 #[derive(Debug, Default)]
@@ -73,18 +70,5 @@ impl Clone for Bowl {
         Self {
             tiles: self.tiles.clone(),
         }
-    }
-}
-
-impl ProtocolFormat for Bowl {
-    fn fmt_human(&self) -> String {
-        if self.tiles.is_empty() {
-            return String::from("-");
-        }
-        self.tiles.iter().map(|t| t.to_string()).collect()
-    }
-
-    fn fmt_uci_like(&self) -> String {
-        self.fmt_human()
     }
 }

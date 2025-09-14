@@ -8,7 +8,6 @@ pub mod gamestate;
 
 mod bag;
 mod bowl;
-mod protocol;
 mod row;
 
 pub use board::Board;
