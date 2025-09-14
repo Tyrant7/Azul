@@ -2,9 +2,8 @@
 
 ## Movegen
 - Use a custom markdown file for UAI
-  - Move specifications
-  - Commands
-  - AzulFEN
+  - Once complete, change the links in the docstrings and review that
+- Clean up a bit of the file organization -> move some data types into their own files
 - Implement tests
 - Cut out all the CLI code and put that into a separate project, importing the rest
   as an Azul-movegen crate

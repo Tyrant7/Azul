@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.47", features = ["derive"] }
 rand = "0.9.2"
+
+[lib]
+name = "azul_movegen"
+path = "src/lib.rs"
