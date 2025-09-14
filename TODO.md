@@ -1,7 +1,6 @@
 # TODO
 
 ## Movegen
-- Finish docstrings
 - Use a custom markdown file for UAI
   - Move specifications
   - Commands
