@@ -10,7 +10,3 @@
 - Figure out if I want to use separate repos for each crate or if I want to keep them separate
   but within the same repo
 - Then from there we can build up the engine manager using two engines as separate processes
-
-## Engine
-- Research techniques to use
-    - Likely try PPO first
