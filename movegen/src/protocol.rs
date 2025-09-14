@@ -1,6 +1,7 @@
-use crate::bowl::{Move, Row, Tile};
 use clap::{Parser, ValueEnum};
 use std::num::ParseIntError;
+
+use crate::{Tile, game_move::Move, row::Row};
 
 #[derive(Parser)]
 #[command(name = "azul-engine")]

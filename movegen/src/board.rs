@@ -1,6 +1,8 @@
 use crate::{
-    bowl::{IllegalMoveError, Row, Tile},
+    Tile,
+    game_move::IllegalMoveError,
     protocol::{ParseGameStateError, ProtocolFormat},
+    row::Row,
 };
 
 /// The width and height of the place area of the board. A single constant is used as

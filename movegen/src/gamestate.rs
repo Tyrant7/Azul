@@ -1,8 +1,9 @@
 use crate::{
-    Board,
+    Board, Tile,
     bag::Bag,
     board::BOARD_DIMENSION,
-    bowl::{Bowl, IllegalMoveError, Move, Tile},
+    bowl::Bowl,
+    game_move::{IllegalMoveError, Move},
     protocol::{ParseGameStateError, ProtocolFormat},
 };
 
