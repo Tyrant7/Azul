@@ -1,7 +1,10 @@
+// Rules adapted from: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
+
 /// The alias type for tiles. Since held and placed tiles have no unique properties beyond needing
 /// to be differentiable, `usize` was used for the underlying type for tiles.
 pub type Tile = usize;
 
+/// Macro to help make getters.
 macro_rules! getters {
     ($($field:ident : $ty:ty), *$(,)?) => {
         $(

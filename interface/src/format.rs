@@ -1,8 +1,7 @@
-use azul_movegen::{Board, GameState, Row, board::BOARD_DIMENSION};
+use azul_movegen::{Bag, Board, Bowl, GameState, board::BOARD_DIMENSION};
 
-use crate::protocol::Protocol;
+use crate::{parsing::ToAzulFEN, protocol::Protocol};
 
-/// TODO
 pub trait ProtocolFormat {
     fn fmt_human(&self) -> String;
     fn fmt_uci_like(&self) -> String;
@@ -22,11 +21,11 @@ impl ProtocolFormat for GameState {
         // Board printouts
         output.push_str(&"-".repeat(20));
         output.push('\n');
-        for (i, board) in self.boards.iter().enumerate() {
+        for (i, board) in self.boards().iter().enumerate() {
             output.push_str(&format!(
                 "player {}{}",
                 i,
-                if self.active_player == i {
+                if *self.active_player() == i {
                     " (active)"
                 } else {
                     ""
@@ -39,21 +38,21 @@ impl ProtocolFormat for GameState {
         output.push('\n');
 
         // Bowl printouts
-        for (i, bowl) in self.bowls.iter().enumerate() {
+        for (i, bowl) in self.bowls().iter().enumerate() {
             output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
         }
         output
     }
 
     fn fmt_uci_like(&self) -> String {
-        self.get_azul_fen()
+        self.to_azul_fen()
     }
 }
 
 impl ProtocolFormat for Board {
     fn fmt_human(&self) -> String {
         let mut output = String::new();
-        for ((h_idx, hold), row) in self.holds.iter().enumerate().zip(self.placed) {
+        for ((h_idx, hold), row) in self.holds().iter().enumerate().zip(self.placed()) {
             output.push_str(&(h_idx + 1).to_string());
             output.push_str(&"  ".repeat(BOARD_DIMENSION - h_idx));
             for h in 0..h_idx + 1 {
@@ -75,8 +74,8 @@ impl ProtocolFormat for Board {
             }
             output.push('\n');
         }
-        output.push_str(&format!("score: {}\n", self.score));
-        output.push_str(&format!("penalties: {}", self.penalties));
+        output.push_str(&format!("score: {}\n", self.score()));
+        output.push_str(&format!("penalties: {}", self.penalties()));
         output.push('\n');
         output.push('\n');
         output
@@ -88,7 +87,7 @@ impl ProtocolFormat for Board {
 
         // Placed
         let mut counter = 0;
-        for row in self.placed {
+        for row in self.placed() {
             for tile in row {
                 if tile.is_some() {
                     if counter > 0 {
@@ -110,7 +109,7 @@ impl ProtocolFormat for Board {
 
         // Holds
         output.push(' ');
-        for row in &self.holds {
+        for row in self.holds() {
             let mut tiles = row.iter().flatten();
             if let Some(t) = tiles.next() {
                 let count = 1 + tiles.count();
@@ -123,23 +122,23 @@ impl ProtocolFormat for Board {
 
         // Bonuses
         output.push(' ');
-        for row in self.bonuses.rows {
+        for row in self.bonuses().rows {
             output.push_str(&if row { 1 } else { 0 }.to_string());
         }
         output.push(' ');
-        for column in self.bonuses.columns {
+        for column in self.bonuses().columns {
             output.push_str(&if column { 1 } else { 0 }.to_string());
         }
         output.push(' ');
-        for tile_type in self.bonuses.tile_types {
+        for tile_type in self.bonuses().tile_types {
             output.push_str(&if tile_type { 1 } else { 0 }.to_string());
         }
 
         // Score and penalties
         output.push(' ');
-        output.push_str(&self.score.to_string());
+        output.push_str(&self.score().to_string());
         output.push(' ');
-        output.push_str(&self.penalties.to_string());
+        output.push_str(&self.penalties().to_string());
 
         // End marker
         output.push_str(" ;");
@@ -149,10 +148,10 @@ impl ProtocolFormat for Board {
 
 impl ProtocolFormat for Bowl {
     fn fmt_human(&self) -> String {
-        if self.tiles.is_empty() {
+        if self.tiles().is_empty() {
             return String::from("-");
         }
-        self.tiles.iter().map(|t| t.to_string()).collect()
+        self.tiles().iter().map(|t| t.to_string()).collect()
     }
 
     fn fmt_uci_like(&self) -> String {
@@ -169,10 +168,11 @@ where
     }
 
     fn fmt_uci_like(&self) -> String {
-        self.items.iter().map(|t| t.to_string()).collect()
+        self.items().iter().map(|t| t.to_string()).collect()
     }
 }
 
+/*
 impl std::fmt::Display for Row {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -185,3 +185,4 @@ impl std::fmt::Display for Row {
         )
     }
 }
+*/

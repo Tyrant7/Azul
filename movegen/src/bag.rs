@@ -20,6 +20,11 @@ impl<T> Bag<T> {
         items.shuffle(&mut rng());
         self.items = items;
     }
+
+    /// Getter for the items in this bag.
+    pub fn items(&self) -> &Vec<T> {
+        &self.items
+    }
 }
 
 impl<T> Iterator for Bag<T> {

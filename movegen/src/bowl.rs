@@ -47,6 +47,11 @@ impl Bowl {
         tiles.dedup();
         tiles
     }
+
+    /// Getter for the tiles in this bowl.
+    pub fn tiles(&self) -> &Vec<Tile> {
+        &self.tiles
+    }
 }
 
 impl Clone for Bowl {

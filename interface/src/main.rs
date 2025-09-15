@@ -1,30 +1,15 @@
-// Rules adapted from: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
 // #![allow(dead_code)]
 
 pub mod format;
 pub mod parsing;
 pub mod protocol;
 
-fn main() {}
-
-/*
 use std::io;
 
-mod bag;
-mod protocol;
-
-pub mod board;
-pub mod bowl;
-pub mod gamestate;
-
-use board::Board;
+use azul_movegen::GameState;
 use rand::seq::IndexedRandom;
 
-use crate::{
-    bowl::Move,
-    gamestate::GameState,
-    protocol::{Protocol, ProtocolFormat},
-};
+use crate::{format::ProtocolFormat, protocol::Protocol};
 
 fn main() {
     let protocol = Protocol::extract();
@@ -76,14 +61,10 @@ fn random_playout(mut gamestate: GameState, protocol: Protocol) {
             .expect("Failed to read input");
 
         let moves = gamestate.get_valid_moves();
-        let selection = moves.choose(&mut rand::rng()).unwrap_or(&Move {
-            bowl: 0,
-            tile_type: 0,
-            row: bowl::Row::Floor,
-        });
+        let selection = moves.choose(&mut rand::rng()).cloned().unwrap_or_default();
         println!("selection: {:?}", selection);
 
-        match gamestate.make_move(selection) {
+        match gamestate.make_move(&selection) {
             Err(_) => println!("Illegal move"),
             Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
         };
@@ -99,6 +80,3 @@ fn random_playout(mut gamestate: GameState, protocol: Protocol) {
     println!("Game over");
     println!("Winner: player {}", gamestate.get_winner());
 }
-
-
-*/

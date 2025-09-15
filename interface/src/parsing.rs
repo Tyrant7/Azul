@@ -3,6 +3,8 @@ use azul_movegen::{
     board::{BOARD_DIMENSION, BonusTypes},
 };
 
+use crate::format::ProtocolFormat;
+
 /// Attempting to parse an invalid AzulFEN or AzulFEN component will produce this error.
 #[derive(Debug)]
 pub struct ParseGameStateError;
