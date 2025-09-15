@@ -29,6 +29,14 @@ impl Board {
         BoardBuilder::default()
     }
 
+    getters! {
+        holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+        placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+        bonuses: BonusTypes,
+        penalties: usize,
+        score: usize,
+    }
+
     /// Returns an iterator over all tiles on this board.
     /// Includes both the held and placed tiles.
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {
@@ -301,7 +309,7 @@ impl Board {
 /// Each property simply represents whether or not the bonus for that
 /// row, column, or tile type has been collected.
 #[derive(Debug, Clone, Copy, Default)]
-struct BonusTypes {
+pub struct BonusTypes {
     pub rows: [bool; BOARD_DIMENSION],
     pub columns: [bool; BOARD_DIMENSION],
     pub tile_types: [bool; BOARD_DIMENSION],
@@ -328,17 +336,8 @@ impl BoardBuilder {
         self
     }
 
-    pub fn bonuses(
-        mut self,
-        rows: [bool; BOARD_DIMENSION],
-        columns: [bool; BOARD_DIMENSION],
-        tile_types: [bool; BOARD_DIMENSION],
-    ) -> Self {
-        self.bonuses = BonusTypes {
-            rows,
-            columns,
-            tile_types,
-        };
+    pub fn bonuses(mut self, bonuses: BonusTypes) -> Self {
+        self.bonuses = bonuses;
         self
     }
 

@@ -2,6 +2,16 @@
 /// to be differentiable, `usize` was used for the underlying type for tiles.
 pub type Tile = usize;
 
+macro_rules! getters {
+    ($($field:ident : $ty:ty), *$(,)?) => {
+        $(
+            pub fn $field(&self) -> &$ty {
+                &self.$field
+            }
+        )*
+    }
+}
+
 pub mod board;
 pub mod game_move;
 pub mod gamestate;

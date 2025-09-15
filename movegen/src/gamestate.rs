@@ -61,6 +61,14 @@ impl GameState {
         GameStateBuilder::default()
     }
 
+    getters! {
+        active_player: usize,
+        boards: Vec<Board>,
+        bowls: Vec<Bowl>,
+        bag: Bag<Tile>,
+        first_token_owner: Option<usize>,
+    }
+
     /// Performs a variety of tasks to setup the beginning of a round, including
     /// - Placing held tiles
     /// - Applying previous round penalties

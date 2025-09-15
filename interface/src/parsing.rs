@@ -1,4 +1,7 @@
-use azul_movegen::{Bag, Board, Bowl, GameState, Tile, board::BOARD_DIMENSION};
+use azul_movegen::{
+    Bag, Board, Bowl, GameState, Tile,
+    board::{BOARD_DIMENSION, BonusTypes},
+};
 
 /// Attempting to parse an invalid AzulFEN or AzulFEN component will produce this error.
 #[derive(Debug)]
@@ -86,26 +89,26 @@ impl FromAzulFEN for Board {
                 builder = builder.holds(holds);
 
                 // Bonuses
-                builder = builder.bonuses(
-                    bonus_rows
+                builder = builder.bonuses(BonusTypes {
+                    rows: bonus_rows
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                    bonus_cols
+                    columns: bonus_cols
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                    bonus_tile_types
+                    tile_types: bonus_tile_types
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                );
+                });
 
                 // Score and penalties
                 builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
@@ -178,27 +181,27 @@ impl ToAzulFEN for GameState {
     fn to_azul_fen(&self) -> String {
         // Boards
         let mut azul_fen = String::new();
-        for board in self.boards.iter() {
+        for board in self.boards().iter() {
             azul_fen.push_str(&board.fmt_uci_like());
             azul_fen.push(' ');
         }
 
         // Bowls
         azul_fen.push_str("| ");
-        for bowl in self.bowls.iter() {
+        for bowl in self.bowls().iter() {
             azul_fen.push_str(&bowl.fmt_uci_like());
             azul_fen.push(' ');
         }
 
         // Bag
         azul_fen.push_str("| ");
-        azul_fen.push_str(&self.bag.fmt_uci_like());
+        azul_fen.push_str(&self.bag().fmt_uci_like());
 
         // Active player and first player token
         azul_fen.push_str(" | ");
-        azul_fen.push_str(&self.active_player.to_string());
+        azul_fen.push_str(&self.active_player().to_string());
         azul_fen.push(' ');
-        azul_fen.push_str(&if let Some(t) = self.first_token_owner {
+        azul_fen.push_str(&if let Some(t) = self.first_token_owner() {
             t.to_string()
         } else {
             "-".to_string()
