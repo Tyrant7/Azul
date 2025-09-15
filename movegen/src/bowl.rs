@@ -7,6 +7,12 @@ pub struct Bowl {
 }
 
 impl Bowl {
+    pub fn from_tiles(tiles: Vec<Tile>) -> Self {
+        let mut bowl = Bowl::default();
+        bowl.fill(tiles);
+        bowl
+    }
+
     /// Assigns this bowl's tiles.
     pub fn fill(&mut self, tiles: Vec<Tile>) {
         self.tiles = tiles;

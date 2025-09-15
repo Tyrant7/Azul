@@ -10,6 +10,9 @@ mod bag;
 mod bowl;
 mod row;
 
+pub use bag::Bag;
 pub use board::Board;
 pub use bowl::Bowl;
+pub use game_move::Move;
 pub use gamestate::GameState;
+pub use row::Row;

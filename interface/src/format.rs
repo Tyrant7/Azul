@@ -1,3 +1,5 @@
+use azul_movegen::{Board, Row, board::BOARD_DIMENSION};
+
 /// TODO
 pub trait ProtocolFormat {
     fn fmt_human(&self) -> String;
