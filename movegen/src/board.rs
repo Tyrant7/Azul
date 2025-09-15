@@ -220,7 +220,7 @@ impl Board {
             if *claimed {
                 continue;
             }
-            if self.placed.iter().all(|row| row.get(i).is_some()) {
+            if self.placed.iter().all(|row| row[i].is_some()) {
                 self.score += COLUMN_BONUS;
                 *claimed = true;
             }
