@@ -2,7 +2,7 @@ use rand::{rng, seq::SliceRandom};
 
 /// This struct is for handling a shuffled `Vec<T>` of items.
 /// Items are removed from the bag when accessed and bags may be restocked at any time.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Bag<T> {
     items: Vec<T>,
 }

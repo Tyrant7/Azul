@@ -24,7 +24,7 @@ pub struct Board {
 }
 
 impl Board {
-    /// Creates a new builder to construct a board from.
+    /// Creates a new `BoardBuilder`.
     pub fn builder() -> BoardBuilder {
         BoardBuilder::default()
     }

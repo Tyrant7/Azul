@@ -56,6 +56,11 @@ impl GameState {
         }
     }
 
+    /// Creates a new `GameStateBuilder`.
+    pub fn builder() -> GameStateBuilder {
+        GameStateBuilder::default()
+    }
+
     /// Performs a variety of tasks to setup the beginning of a round, including
     /// - Placing held tiles
     /// - Applying previous round penalties
@@ -184,5 +189,51 @@ impl GameState {
             .max_by_key(|(_, b)| (b.get_score(), b.count_horizontal_lines()))
             .unwrap()
             .0
+    }
+}
+
+#[derive(Default)]
+pub struct GameStateBuilder {
+    active_player: usize,
+    boards: Vec<Board>,
+    bowls: Vec<Bowl>,
+    bag: Bag<Tile>,
+    first_token_owner: Option<usize>,
+}
+
+impl GameStateBuilder {
+    pub fn active_player(mut self, active_player: usize) -> Self {
+        self.active_player = active_player;
+        self
+    }
+
+    pub fn boards(mut self, boards: Vec<Board>) -> Self {
+        self.boards = boards;
+        self
+    }
+
+    pub fn bowls(mut self, bowls: Vec<Bowl>) -> Self {
+        self.bowls = bowls;
+        self
+    }
+
+    pub fn bag(mut self, bag: Bag<Tile>) -> Self {
+        self.bag = bag;
+        self
+    }
+
+    pub fn first_token_owner(mut self, first_token_owner: Option<usize>) -> Self {
+        self.first_token_owner = first_token_owner;
+        self
+    }
+
+    pub fn build(self) -> GameState {
+        GameState {
+            active_player: self.active_player,
+            boards: self.boards,
+            bowls: self.bowls,
+            bag: self.bag,
+            first_token_owner: self.first_token_owner,
+        }
     }
 }

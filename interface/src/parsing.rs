@@ -162,13 +162,13 @@ impl FromAzulFEN for GameState {
             ),
             _ => return Err(ParseGameStateError),
         };
-        Ok(GameState {
-            active_player,
-            boards,
-            bowls,
-            bag,
-            first_token_owner,
-        })
+        Ok(GameState::builder()
+            .active_player(active_player)
+            .boards(boards)
+            .bowls(bowls)
+            .bag(bag)
+            .first_token_owner(first_token_owner)
+            .build())
     }
 }
 
