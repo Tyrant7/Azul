@@ -24,6 +24,11 @@ pub struct Board {
 }
 
 impl Board {
+    /// Creates a new builder to construct a board from.
+    pub fn builder() -> BoardBuilder {
+        BoardBuilder::default()
+    }
+
     /// Returns an iterator over all tiles on this board.
     /// Includes both the held and placed tiles.
     pub fn get_active_tiles(&self) -> impl Iterator<Item = Tile> + '_ {
@@ -246,6 +251,11 @@ impl Board {
         self.score
     }
 
+    /// Returns the type of tile that can be placed at `row` and `col` on this board.
+    pub fn get_tile_type_at_pos(row: usize, col: usize) -> Tile {
+        ((col + BOARD_DIMENSION - row) % BOARD_DIMENSION) as Tile
+    }
+
     /// Gets the index of the column where a tile in a given row of a given type should be placed.
     ///
     /// If we consider the board from a top view, tiles simply cycle by index and type:
@@ -255,11 +265,6 @@ impl Board {
     /// - ...
     fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
         (tile_type + row_idx) % BOARD_DIMENSION
-    }
-
-    /// Returns the type of tile that can be placed at `row` and `col` on this board.
-    fn get_tile_type_at_pos(row: usize, col: usize) -> Tile {
-        ((col + BOARD_DIMENSION - row) % BOARD_DIMENSION) as Tile
     }
 
     /// Returns the number of penalty points associated with the given number of penalty tiles.  
@@ -300,4 +305,60 @@ struct BonusTypes {
     pub rows: [bool; BOARD_DIMENSION],
     pub columns: [bool; BOARD_DIMENSION],
     pub tile_types: [bool; BOARD_DIMENSION],
+}
+
+/// TODO: docstrings for this
+#[derive(Default)]
+pub struct BoardBuilder {
+    holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+    placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
+    bonuses: BonusTypes,
+    penalties: usize,
+    score: usize,
+}
+
+impl BoardBuilder {
+    pub fn holds(mut self, holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION]) -> Self {
+        self.holds = holds;
+        self
+    }
+
+    pub fn placed(mut self, placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION]) -> Self {
+        self.placed = placed;
+        self
+    }
+
+    pub fn bonuses(
+        mut self,
+        rows: [bool; BOARD_DIMENSION],
+        columns: [bool; BOARD_DIMENSION],
+        tile_types: [bool; BOARD_DIMENSION],
+    ) -> Self {
+        self.bonuses = BonusTypes {
+            rows,
+            columns,
+            tile_types,
+        };
+        self
+    }
+
+    pub fn penalties(mut self, penalties: usize) -> Self {
+        self.penalties = penalties;
+        self
+    }
+
+    pub fn score(mut self, score: usize) -> Self {
+        self.score = score;
+        self
+    }
+
+    pub fn build(self) -> Board {
+        Board {
+            holds: self.holds,
+            placed: self.placed,
+            bonuses: self.bonuses,
+            penalties: self.penalties,
+            score: self.score,
+        }
+    }
 }

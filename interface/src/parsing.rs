@@ -35,11 +35,11 @@ impl FromAzulFEN for Board {
     /// It is important to note that the board component is not an entire FEN.
     /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
     fn from_azul_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
-        let mut board = Board::default();
+        let mut builder = Board::builder();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
         match parts.as_slice() {
             [
-                placed,
+                placed_parts,
                 held,
                 bonus_rows,
                 bonus_cols,
@@ -48,13 +48,14 @@ impl FromAzulFEN for Board {
                 penalties,
             ] => {
                 // Placed
+                let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
                 let mut y = 0;
                 let mut x = 0;
-                for p in placed.chars() {
+                for p in placed_parts.chars() {
                     if let Ok(step) = p.to_string().parse::<usize>() {
                         x += step;
                     } else if p == '-' {
-                        board.holds[y][x] = Some(Board::get_tile_type_at_pos(y, x));
+                        placed[y][x] = Some(Board::get_tile_type_at_pos(y, x));
                         x += 1;
                     }
                     if x >= BOARD_DIMENSION {
@@ -62,8 +63,10 @@ impl FromAzulFEN for Board {
                         x = 0;
                     }
                 }
+                builder = builder.placed(placed);
 
                 // Held
+                let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
                 for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
                     let tile_type = h[0]
                         .to_string()
@@ -77,39 +80,40 @@ impl FromAzulFEN for Board {
                         continue;
                     }
                     for n in 0..tile_count {
-                        board.holds[i][n] = Some(tile_type);
+                        holds[i][n] = Some(tile_type);
                     }
                 }
+                builder = builder.holds(holds);
 
                 // Bonuses
-                board.bonuses = BonusTypes {
-                    rows: bonus_rows
+                builder = builder.bonuses(
+                    bonus_rows
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                    columns: bonus_cols
+                    bonus_cols
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                    tile_types: bonus_tile_types
+                    bonus_tile_types
                         .chars()
                         .map(|c| c == '1')
                         .collect::<Vec<_>>()
                         .try_into()
                         .or(Err(ParseGameStateError))?,
-                };
+                );
 
                 // Score and penalties
-                board.score = score.parse().or(Err(ParseGameStateError))?;
-                board.penalties = penalties.parse().or(Err(ParseGameStateError))?;
+                builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
+                builder = builder.penalties(penalties.parse().or(Err(ParseGameStateError))?);
             }
             _ => return Err(ParseGameStateError),
         };
-        Ok(board)
+        Ok(builder.build())
     }
 }
 

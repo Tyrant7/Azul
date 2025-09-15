@@ -1,4 +1,6 @@
-use azul_movegen::{Board, Row, board::BOARD_DIMENSION};
+use azul_movegen::{Board, GameState, Row, board::BOARD_DIMENSION};
+
+use crate::protocol::Protocol;
 
 /// TODO
 pub trait ProtocolFormat {
