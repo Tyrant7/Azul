@@ -1,9 +1,4 @@
-use crate::{
-    Tile,
-    display::{ParseGameStateError, ProtocolFormat},
-    game_move::IllegalMoveError,
-    row::Row,
-};
+use crate::{Tile, game_move::IllegalMoveError, row::Row};
 
 /// The width and height of the place area of the board. A single constant is used as
 /// all boards must be a square.

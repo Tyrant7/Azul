@@ -11,4 +11,5 @@ mod bowl;
 mod row;
 
 pub use board::Board;
+pub use bowl::Bowl;
 pub use gamestate::GameState;

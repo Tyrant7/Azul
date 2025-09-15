@@ -168,3 +168,16 @@ where
         self.items.iter().map(|t| t.to_string()).collect()
     }
 }
+
+impl std::fmt::Display for Row {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                Row::Floor => "-".to_string(),
+                Row::Wall(i) => i.to_string(),
+            }
+        )
+    }
+}

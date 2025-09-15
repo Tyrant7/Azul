@@ -1,8 +1,6 @@
 // Rules adapted from: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
 // #![allow(dead_code)]
 
-use azul_movegen;
-
 pub mod format;
 pub mod parsing;
 pub mod protocol;
