@@ -13,7 +13,7 @@ struct Cli {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Protocol {
     Human,
-    UCILike,
+    UAI,
 }
 
 impl Protocol {

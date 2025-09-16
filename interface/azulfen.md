@@ -56,7 +56,7 @@ If nobody owns the first player token, then "-" will be written in its place
 
 ## Summary
 
-In full, a complete AzulFEN may look something like the following (newlines added for clarity):
+In full, a complete AzulFEN may look something like the following:
 
 2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
 1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;

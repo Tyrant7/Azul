@@ -9,7 +9,7 @@ pub trait ProtocolFormat {
     fn fmt_protocol(&self, protocol: Protocol) -> String {
         match protocol {
             Protocol::Human => self.fmt_human(),
-            Protocol::UCILike => self.fmt_uci_like(),
+            Protocol::UAI => self.fmt_uci_like(),
         }
     }
 }
