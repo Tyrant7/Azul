@@ -38,8 +38,8 @@ Tournament/Match Settings
 -openings file.azl: load a set of starting positions/opening book for fair testing
 -swap: ensure each engine plays both "first" and "second" positions equally
 
--timeout N: max seconds to wait for an engine to reply to the start command before forfeitting the match
--crash-mode [forfeit | restart]: what to do when an engine crashes mid-match
+-timeout N: max milliseconds to wait for an engine to reply to the start command before forfeitting the match
+-recover: restarts an engine if it crashes mid-match rather than forfeiting
 
 Debugging and logging
 

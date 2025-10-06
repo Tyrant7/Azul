@@ -12,13 +12,11 @@ use rand::seq::IndexedRandom;
 use crate::{format::ProtocolFormat, protocol::Protocol};
 
 fn main() {
-    let protocol = Protocol::extract();
-
     let mut gamestate = GameState::new(2);
     gamestate.setup_next_round();
-    println!("{}", gamestate.fmt_protocol(protocol));
+    println!("{}", gamestate.fmt_protocol(Protocol::Human));
 
-    listen_for_input(gamestate, protocol);
+    listen_for_input(gamestate, Protocol::Human);
 }
 
 fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
