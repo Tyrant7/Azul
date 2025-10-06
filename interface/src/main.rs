@@ -7,11 +7,18 @@ pub mod protocol;
 use std::io;
 
 use azul_movegen::GameState;
+use clap::Parser;
 use rand::seq::IndexedRandom;
 
-use crate::{format::ProtocolFormat, protocol::Protocol};
+use crate::{
+    format::ProtocolFormat,
+    protocol::{Cli, Protocol},
+};
 
 fn main() {
+    let cli = Cli::parse();
+    println!("{:#?}", cli);
+
     let mut gamestate = GameState::new(2);
     gamestate.setup_next_round();
     println!("{}", gamestate.fmt_protocol(Protocol::Human));

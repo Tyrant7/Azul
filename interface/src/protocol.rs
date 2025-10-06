@@ -3,7 +3,7 @@ use clap::{Parser, ValueEnum};
 use std::num::ParseIntError;
 
 #[derive(Debug, Clone)]
-struct EngineConfig {
+pub struct EngineConfig {
     pub path: String,
     pub proto: Protocol,
     pub tc: Option<TimeControl>,
@@ -14,27 +14,40 @@ struct EngineConfig {
     pub limit_threads: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum Protocol {
+    Human,
+    UAI,
+}
+
 #[derive(Debug, Clone)]
-enum TimeControl {
+pub enum TimeControl {
     Increment(u32, u32),
     Fixed(u32),
 }
 
-#[derive(ValueEnum, Clone)]
-enum TournamentStyle {
+#[derive(ValueEnum, Debug, Clone)]
+pub enum TournamentStyle {
     Gauntlet,
     RoundRobin,
     Swiss,
     Random,
 }
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "azul-interface", about = "Manages Azul engine matches")]
-struct Cli {
+pub struct Cli {
     // =====================
     // Engines
     // =====================
-    #[arg(long = "engine", value_parser = parse_engine)]
+    #[arg(
+        long = "engine", 
+        required = true,
+        value_parser = parse_engine,
+        num_args = 2..,
+        value_delimiter = None,
+        help = "Define engine configuration (e.g. --engine path=PATH proto=UAI tc=60+5)"
+    )]
     pub engines: Vec<EngineConfig>,
 
     // =====================
@@ -43,37 +56,37 @@ struct Cli {
     #[arg(long, value_enum)]
     pub tournament: Option<TournamentStyle>,
 
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", default_value_t = 1)]
     pub concurrency: usize,
 
     #[arg(long, value_name = "PATH")]
     pub out: String,
 
     #[arg(long, value_name = "PATH")]
-    pub resume: String,
+    pub resume: Option<String>,
 
     #[arg(long, value_name = "N")]
-    pub rounds: usize,
+    pub rounds: Option<usize>,
 
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", default_value_t = 1)]
     pub games: usize,
 
     #[arg(long, action)]
     pub repeat: bool,
 
     #[arg(long = "max-games", value_name = "N")]
-    pub max_games: usize,
+    pub max_games: Option<usize>,
 
     #[arg(long, value_name = "N")]
-    pub seed: u64,
+    pub seed: Option<u64>,
 
     #[arg(long, value_name = "PATH")]
-    pub openings: String,
+    pub openings: Option<String>,
 
     #[arg(long, action)]
     pub swap: bool,
 
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", default_value_t = 10)]
     pub timeout: usize,
 
     #[arg(long, action)]
@@ -172,16 +185,6 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
     }
 
     Ok(config)
-}
-
-pub fn full_parse() {
-    let cli = Cli::parse();
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum Protocol {
-    Human,
-    UAI,
 }
 
 #[derive(Debug)]
