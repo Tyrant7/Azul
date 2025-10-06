@@ -34,6 +34,9 @@ pub enum TournamentStyle {
     Random,
 }
 
+// Example:
+// cargo run -p interface -- --engine "path=path tc=60+1" "path=path tc=60+2" --out "path"
+
 #[derive(Parser, Debug)]
 #[command(name = "azul-interface", about = "Manages Azul engine matches")]
 pub struct Cli {
