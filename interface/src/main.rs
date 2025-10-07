@@ -4,7 +4,10 @@ pub mod format;
 pub mod parsing;
 pub mod protocol;
 
-use std::io;
+use std::{
+    io::{self, Read},
+    process::Command,
+};
 
 use azul_movegen::GameState;
 use clap::Parser;
@@ -18,6 +21,28 @@ use crate::{
 fn main() {
     let cli = Cli::parse();
     println!("{:#?}", cli);
+
+    // TODO: Figure out how to start an engine as a child process from here
+
+    let engines = cli
+        .engines
+        .iter()
+        .map(|e| {
+            let args: Vec<String> = e
+                .args
+                .clone()
+                .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
+                .unwrap_or_default();
+            Command::new(&e.path)
+                .args(args)
+                .spawn()
+                .expect("Failed to start engine")
+        })
+        .collect::<Vec<_>>();
+
+    for eng in engines {
+        println!("{:?}", eng);
+    }
 
     let mut gamestate = GameState::new(2);
     gamestate.setup_next_round();
