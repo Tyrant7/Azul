@@ -1,4 +1,17 @@
-// #![allow(dead_code)]
+//! Command-line interface and protocol support for Azul engines.
+//!
+//! This crate sits above [`azul_movegen`]. It parses engine and match
+//! configuration, formats game state for humans or machine clients, converts
+//! game state to and from AzulFEN, and parses the six-digit move notation used
+//! by the current UAI draft.
+//!
+//! The [`protocol`] module owns CLI configuration, protocol and time-control
+//! types, and move parsing. The [`format`] module renders movegen values, while
+//! [`parsing`] handles AzulFEN components and complete game states.
+//!
+//! The executable is currently a development harness: it can spawn configured
+//! child processes and run a local human-input game, but full UAI message
+//! dispatch, engine I/O, tournaments, timing, and recovery are still pending.
 
 pub mod format;
 pub mod parsing;
