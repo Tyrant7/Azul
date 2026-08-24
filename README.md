@@ -27,7 +27,7 @@ The crate exposes the main types from [`movegen/src/lib.rs`](movegen/src/lib.rs)
 
 The normal game flow is:
 
-1. Create a `GameState` for the number of players.
+1. Create a `GameState` for two, three, or four players and handle the construction result.
 2. Call `setup_next_round()` to place completed holds, apply penalties, and fill the factory bowls.
 3. Read `get_valid_moves()` for the active player.
 4. Apply one move with `make_move()`.

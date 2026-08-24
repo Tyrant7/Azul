@@ -58,7 +58,7 @@ fn main() {
     }
 
     let seed = rand::rng().random();
-    let mut gamestate = GameState::new(2, seed);
+    let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
     gamestate.setup_next_round();
     println!("{}", gamestate.fmt_protocol(Protocol::Human));
 

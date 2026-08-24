@@ -19,6 +19,19 @@ mod builder;
 pub use builder::GameStateBuilder;
 use rand::{SeedableRng, rngs::SmallRng};
 
+/// Describes why a game state could not be constructed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameStateError {
+    /// The game must contain between two and four players.
+    InvalidPlayerCount { players: usize },
+    /// The active-player index is outside the board list.
+    InvalidActivePlayer { active_player: usize },
+    /// The first-player-token owner is outside the board list.
+    InvalidFirstTokenOwner { player: usize },
+    /// The number of bowls does not match the player count.
+    InvalidBowlCount { expected: usize, actual: usize },
+}
+
 /// Complete mutable state for an Azul game.
 ///
 /// The state contains one board per player, the factory bowls and centre area,
@@ -40,6 +53,36 @@ fn get_bowl_count(players: usize) -> usize {
     players * 2 + 2
 }
 
+/// Validates the component relationships required by a playable game state.
+fn validate_components(
+    active_player: usize,
+    boards: &[Board],
+    bowls: &[Bowl],
+    first_token_owner: Option<usize>,
+) -> Result<(), GameStateError> {
+    if !(2..=4).contains(&boards.len()) {
+        return Err(GameStateError::InvalidPlayerCount {
+            players: boards.len(),
+        });
+    }
+    let expected_bowls = get_bowl_count(boards.len());
+    if bowls.len() != expected_bowls {
+        return Err(GameStateError::InvalidBowlCount {
+            expected: expected_bowls,
+            actual: bowls.len(),
+        });
+    }
+    if active_player >= boards.len() {
+        return Err(GameStateError::InvalidActivePlayer { active_player });
+    }
+    if let Some(player) = first_token_owner
+        && player >= boards.len()
+    {
+        return Err(GameStateError::InvalidFirstTokenOwner { player });
+    }
+    Ok(())
+}
+
 /// Generates the standard game set with [`TILES_PER_TYPE`] tiles of each type.
 fn get_default_tileset() -> Vec<Tile> {
     let mut tiles = Vec::new();
@@ -53,17 +96,21 @@ fn get_default_tileset() -> Vec<Tile> {
 impl GameState {
     /// Creates a new game with empty bowls and boards for `players` players.
     ///
-    /// Call [`GameState::setup_next_round`] before requesting or applying moves.
-    pub fn new(players: usize, seed: u64) -> Self {
+    /// Only two-, three-, and four-player games are supported. Call
+    /// [`GameState::setup_next_round`] before requesting or applying moves.
+    pub fn new(players: usize, seed: u64) -> Result<Self, GameStateError> {
+        if !(2..=4).contains(&players) {
+            return Err(GameStateError::InvalidPlayerCount { players });
+        }
         let mut rng = SmallRng::seed_from_u64(seed);
-        GameState {
+        Ok(GameState {
             active_player: 0,
             boards: vec![Board::default(); players],
             bowls: vec![Bowl::default(); get_bowl_count(players)],
             bag: Bag::new(get_default_tileset(), &mut rng),
             first_token_owner: None,
             rng,
-        }
+        })
     }
 
     /// Creates a new `GameStateBuilder`.

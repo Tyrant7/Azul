@@ -13,8 +13,9 @@
 //! [`GameState::round_over`] becomes true. The game ends when
 //! [`GameState::is_game_over`] becomes true.
 //!
-//! The implementation uses five tile types and a five-by-five wall. Tile types
-//! are represented by the [`Tile`] alias, and rows are represented by [`Row`].
+//! The implementation supports two- through four-player games, uses five tile
+//! types, and uses a five-by-five wall. Tile types are represented by the
+//! [`Tile`] alias, and rows are represented by [`Row`].
 //! The rules source material is the [Azul rulebook][rulebook].
 //!
 //! [rulebook]: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
@@ -46,5 +47,5 @@ pub use bag::Bag;
 pub use board::Board;
 pub use bowl::Bowl;
 pub use game_move::Move;
-pub use gamestate::GameState;
+pub use gamestate::{GameState, GameStateError};
 pub use row::Row;

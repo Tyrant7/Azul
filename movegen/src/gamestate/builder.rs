@@ -1,6 +1,6 @@
 use rand::{SeedableRng, rngs::SmallRng};
 
-use super::GameState;
+use super::{GameState, GameStateError, validate_components};
 use crate::{Bag, Board, Bowl, Tile};
 
 /// Builder for constructing a [`GameState`] from explicit component state.
@@ -51,15 +51,24 @@ impl GameStateBuilder {
         self
     }
 
-    /// Builds a game state from the configured fields.
-    pub fn build(self) -> GameState {
-        GameState {
+    /// Builds a validated game state from the configured fields.
+    ///
+    /// Construction fails when the player count, bowl count, active-player
+    /// index, or first-player-token owner is invalid.
+    pub fn build(self) -> Result<GameState, GameStateError> {
+        validate_components(
+            self.active_player,
+            &self.boards,
+            &self.bowls,
+            self.first_token_owner,
+        )?;
+        Ok(GameState {
             active_player: self.active_player,
             boards: self.boards,
             bowls: self.bowls,
             bag: self.bag,
             first_token_owner: self.first_token_owner,
             rng: SmallRng::seed_from_u64(self.seed),
-        }
+        })
     }
 }

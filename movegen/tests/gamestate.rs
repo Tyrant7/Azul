@@ -1,5 +1,5 @@
 use azul_movegen::board::BOARD_DIMENSION;
-use azul_movegen::{Bag, Board, Bowl, GameState, Move, Row, Tile};
+use azul_movegen::{Bag, Board, Bowl, GameState, GameStateError, Move, Row, Tile};
 use rand::SeedableRng;
 
 /// Creates a vector of empty bowls with the requested length.
@@ -15,11 +15,12 @@ fn custom_state(boards: Vec<Board>, bowls: Vec<Bowl>) -> GameState {
         .bag(Bag::<Tile>::default())
         .set_seed(17)
         .build()
+        .unwrap()
 }
 
 #[test]
 fn new_creates_the_expected_components() {
-    let state = GameState::new(2, 42);
+    let state = GameState::new(2, 42).unwrap();
 
     assert_eq!(*state.active_player(), 0);
     assert_eq!(state.boards().len(), 2);
@@ -30,9 +31,66 @@ fn new_creates_the_expected_components() {
 }
 
 #[test]
+fn new_supports_two_three_and_four_players() {
+    for players in 2..=4 {
+        let state = GameState::new(players, 42).unwrap();
+
+        assert_eq!(state.boards().len(), players);
+        assert_eq!(state.bowls().len(), players * 2 + 2);
+    }
+}
+
+#[test]
+fn new_rejects_unsupported_player_counts() {
+    for players in [0, 1, 5, usize::MAX] {
+        assert!(matches!(
+            GameState::new(players, 42),
+            Err(GameStateError::InvalidPlayerCount { players: actual }) if actual == players
+        ));
+    }
+}
+
+#[test]
+fn builder_rejects_empty_and_structurally_invalid_states() {
+    assert!(matches!(
+        GameState::builder().build(),
+        Err(GameStateError::InvalidPlayerCount { players: 0 })
+    ));
+
+    assert!(matches!(
+        GameState::builder()
+            .boards(vec![Board::default(); 2])
+            .bowls(empty_bowls(5))
+            .build(),
+        Err(GameStateError::InvalidBowlCount {
+            expected: 6,
+            actual: 5
+        })
+    ));
+
+    assert!(matches!(
+        GameState::builder()
+            .active_player(2)
+            .boards(vec![Board::default(); 2])
+            .bowls(empty_bowls(6))
+            .build(),
+        Err(GameStateError::InvalidActivePlayer { active_player: 2 })
+    ));
+
+    assert!(matches!(
+        GameState::builder()
+            .boards(vec![Board::default(); 2])
+            .bowls(empty_bowls(6))
+            .first_token_owner(Some(2))
+            .build(),
+        Err(GameStateError::InvalidFirstTokenOwner { player: 2 })
+    ));
+}
+
+#[test]
 fn setup_fills_factory_bowls_and_preserves_determinism() {
-    let mut first = GameState::new(2, 42);
-    let mut second = GameState::new(2, 42);
+    let mut first = GameState::new(2, 42).unwrap();
+    let mut second = GameState::new(2, 42).unwrap();
 
     first.setup_next_round();
     second.setup_next_round();
@@ -56,7 +114,7 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
 
 #[test]
 fn valid_moves_include_each_tile_type_and_all_destinations() {
-    let mut state = GameState::new(2, 9);
+    let mut state = GameState::new(2, 9).unwrap();
     state.setup_next_round();
     let moves = state.get_valid_moves();
     let expected_count: usize = state
@@ -84,7 +142,7 @@ fn valid_moves_include_each_tile_type_and_all_destinations() {
 
 #[test]
 fn make_move_updates_board_bowls_and_active_player() {
-    let mut state = GameState::new(2, 12);
+    let mut state = GameState::new(2, 12).unwrap();
     state.setup_next_round();
     let chosen_bowl = 1;
     let chosen_tile = state.bowls()[chosen_bowl].tiles()[0];
@@ -110,7 +168,7 @@ fn make_move_updates_board_bowls_and_active_player() {
 
 #[test]
 fn illegal_move_is_rejected_without_advancing_the_turn() {
-    let mut state = GameState::new(2, 12);
+    let mut state = GameState::new(2, 12).unwrap();
     state.setup_next_round();
 
     let result = state.make_move(&Move {
@@ -125,7 +183,7 @@ fn illegal_move_is_rejected_without_advancing_the_turn() {
 
 #[test]
 fn first_centre_pick_assigns_the_token_and_penalty() {
-    let mut bowls = empty_bowls(4);
+    let mut bowls = empty_bowls(6);
     bowls[0] = Bowl::from_tiles(vec![2]);
     let mut state = custom_state(vec![Board::default(); 2], bowls);
 
@@ -150,7 +208,8 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
         .bag(Bag::<Tile>::default())
         .first_token_owner(Some(1))
         .set_seed(21)
-        .build();
+        .build()
+        .unwrap();
     let mut state = state;
 
     state.setup_next_round();
@@ -171,8 +230,9 @@ fn builder_preserves_explicit_state() {
     let mut rng = rand::rngs::SmallRng::seed_from_u64(3);
     let bag = Bag::new(vec![1, 2, 3], &mut rng);
     let expected_bag = bag.items().clone();
-    let boards = vec![Board::default()];
-    let bowls = vec![Bowl::from_tiles(vec![4])];
+    let boards = vec![Board::default(); 2];
+    let mut bowls = empty_bowls(6);
+    bowls[0] = Bowl::from_tiles(vec![4]);
     let state = GameState::builder()
         .active_player(0)
         .boards(boards)
@@ -180,10 +240,11 @@ fn builder_preserves_explicit_state() {
         .bag(bag)
         .first_token_owner(Some(0))
         .set_seed(99)
-        .build();
+        .build()
+        .unwrap();
 
     assert_eq!(*state.active_player(), 0);
-    assert_eq!(state.boards().len(), 1);
+    assert_eq!(state.boards().len(), 2);
     assert_eq!(state.bowls()[0].tiles(), &vec![4]);
     assert_eq!(state.bag().items(), &expected_bag);
     assert_eq!(*state.first_token_owner(), Some(0));
@@ -197,7 +258,7 @@ fn game_over_and_winner_use_board_completion_and_score() {
     }
     let completed_board = Board::builder().placed(completed_row).build();
     let higher_score = Board::builder().score(8).build();
-    let state = custom_state(vec![completed_board, higher_score], empty_bowls(2));
+    let state = custom_state(vec![completed_board, higher_score], empty_bowls(6));
 
     assert!(state.is_game_over());
     assert_eq!(state.get_winner(), 1);
@@ -211,10 +272,10 @@ fn winner_tie_breaks_by_horizontal_lines_then_later_index() {
     }
     let state = custom_state(
         vec![Board::default(), Board::builder().placed(one_line).build()],
-        empty_bowls(2),
+        empty_bowls(6),
     );
     assert_eq!(state.get_winner(), 1);
 
-    let tied = custom_state(vec![Board::default(), Board::default()], empty_bowls(2));
+    let tied = custom_state(vec![Board::default(), Board::default()], empty_bowls(6));
     assert_eq!(tied.get_winner(), 1);
 }

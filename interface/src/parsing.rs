@@ -173,13 +173,14 @@ impl FromAzulFEN for GameState {
             ),
             _ => return Err(ParseGameStateError),
         };
-        Ok(GameState::builder()
+        GameState::builder()
             .active_player(active_player)
             .boards(boards)
             .bowls(bowls)
             .bag(bag)
             .first_token_owner(first_token_owner)
-            .build())
+            .build()
+            .map_err(|_| ParseGameStateError)
     }
 }
 
