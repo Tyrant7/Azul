@@ -46,7 +46,7 @@ The normal game flow is:
 
 See the [`interface/README.md`](interface/README.md) for command-line configuration, [`interface/protocol.md`](interface/protocol.md) for the UAI direction, and [`interface/azulfen.md`](interface/azulfen.md) for the state interchange format.
 
-The interface executable is currently a development harness. It parses CLI configuration, can spawn configured child processes with managed stdin/stdout/stderr, creates a local two-player game, prints the state, and accepts human-entered moves. UAI handshakes and command dispatch, tournaments, timing, recovery, and most UAI behavior remain to be implemented.
+The interface executable is currently a development harness. It parses CLI configuration, can spawn configured child processes with managed stdin/stdout/stderr, performs the UAI handshake, creates a local two-player game, prints the state, and accepts human-entered moves. UAI command dispatch, tournaments, timing, recovery, and most UAI behavior remain to be implemented.
 
 ### `random_engine`
 

@@ -243,7 +243,7 @@ mod tests {
         #[cfg(not(windows))]
         let script = "exit 7";
 
-        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        let process = EngineProcess::spawn(&mut fixture(script)).unwrap();
         let status = process.shutdown(short_timeout()).unwrap();
 
         assert_eq!(status.code(), Some(7));

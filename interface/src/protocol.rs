@@ -1,8 +1,9 @@
 //! Command-line configuration, protocol modes, and move parsing.
 
+use crate::process::EngineProcess;
 use azul_movegen::{Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
-use std::num::ParseIntError;
+use std::{io, num::ParseIntError, time::Duration};
 
 /// Configuration for one engine participating in a match.
 #[derive(Debug, Clone)]
@@ -32,6 +33,80 @@ pub enum Protocol {
     Human,
     /// The [draft Universal Azul Interface protocol](../protocol.md).
     UAI,
+}
+
+/// Identity and option declarations returned during a UAI handshake.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct EngineIdentity {
+    /// Display name returned by the engine.
+    pub(crate) name: Option<String>,
+    /// Author or organization returned by the engine.
+    pub(crate) author: Option<String>,
+    /// Raw `option` declarations returned by the engine.
+    pub(crate) options: Vec<String>,
+}
+
+/// Performs the UAI startup handshake for one managed engine process.
+pub(crate) fn uai_handshake(
+    process: &mut EngineProcess,
+    timeout: Duration,
+) -> io::Result<EngineIdentity> {
+    process.send_line("uai")?;
+    let mut identity = EngineIdentity::default();
+
+    loop {
+        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "engine closed stdout during uai",
+            )
+        })?;
+
+        if line == "uaiok" {
+            if identity.name.is_none() || identity.author.is_none() {
+                return Err(handshake_error(
+                    "engine completed uai without id name and id author",
+                ));
+            }
+            return Ok(identity);
+        }
+        if let Some(name) = line.strip_prefix("id name ") {
+            if name.is_empty() || identity.name.replace(name.to_owned()).is_some() {
+                return Err(handshake_error(
+                    "engine returned an invalid or duplicate id name",
+                ));
+            }
+            continue;
+        }
+        if let Some(author) = line.strip_prefix("id author ") {
+            if author.is_empty() || identity.author.replace(author.to_owned()).is_some() {
+                return Err(handshake_error(
+                    "engine returned an invalid or duplicate id author",
+                ));
+            }
+            continue;
+        }
+        if let Some(option) = line.strip_prefix("option ") {
+            if option.is_empty() {
+                return Err(handshake_error(
+                    "engine returned an empty option declaration",
+                ));
+            }
+            identity.options.push(option.to_owned());
+            continue;
+        }
+        if line.starts_with("error ") {
+            return Err(handshake_error(line));
+        }
+        return Err(handshake_error(format!(
+            "unexpected response during uai handshake: {line}"
+        )));
+    }
+}
+
+/// Creates a protocol error with a stable error category for callers.
+fn handshake_error(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 /// Time limit assigned to an engine.
@@ -290,9 +365,28 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Protocol, TimeControl, parse_engine, parse_move};
+    use super::{Cli, Protocol, TimeControl, parse_engine, parse_move, uai_handshake};
+    use crate::process::EngineProcess;
     use azul_movegen::{Row, game_move::Move};
     use clap::Parser;
+    use std::{io::ErrorKind, process::Command, time::Duration};
+
+    /// Builds a platform-native child command for UAI handshake tests.
+    fn fixture(script: &str) -> Command {
+        #[cfg(windows)]
+        {
+            let mut command = Command::new(std::env::var_os("COMSPEC").unwrap());
+            command.args(["/Q", "/V:ON", "/C", script]);
+            command
+        }
+
+        #[cfg(not(windows))]
+        {
+            let mut command = Command::new("sh");
+            command.args(["-c", script]);
+            command
+        }
+    }
 
     #[test]
     fn parse_engine_accepts_all_descriptor_fields() {
@@ -394,5 +488,33 @@ mod tests {
         for input in ["", "00000", "0000000", "00a000", "€123"] {
             assert!(parse_move(input).is_err(), "accepted {input:?}");
         }
+    }
+
+    #[test]
+    fn uai_handshake_collects_identity_and_options() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo id name TestEngine& echo id author TestAuthor& echo option name Skill type spin default 5& echo uaiok";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf 'id name TestEngine\\nid author TestAuthor\\noption name Skill type spin default 5\\nuaiok\\n'";
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        let identity = uai_handshake(&mut process, Duration::from_secs(1)).unwrap();
+
+        assert_eq!(identity.name.as_deref(), Some("TestEngine"));
+        assert_eq!(identity.author.as_deref(), Some("TestAuthor"));
+        assert_eq!(identity.options, vec!["name Skill type spin default 5"]);
+    }
+
+    #[test]
+    fn uai_handshake_rejects_engine_errors() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo error unsupported";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf 'error unsupported\\n'";
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        let error = uai_handshake(&mut process, Duration::from_secs(1)).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
     }
 }

@@ -37,7 +37,7 @@ fn main() {
 
     // Spawn configured engines; protocol dispatch remains separate from the human loop.
 
-    let engines = cli
+    let mut engines = cli
         .engines
         .iter()
         .map(|e| {
@@ -54,6 +54,18 @@ fn main() {
             EngineProcess::spawn(&mut command).expect("Failed to start engine")
         })
         .collect::<Vec<_>>();
+
+    for (engine, config) in engines.iter_mut().zip(&cli.engines) {
+        if matches!(config.proto, Protocol::UAI) {
+            let identity = protocol::uai_handshake(engine, Duration::from_secs(5))
+                .expect("UAI engine handshake failed");
+            println!(
+                "UAI engine: {} by {}",
+                identity.name.as_deref().unwrap_or("<unnamed>"),
+                identity.author.as_deref().unwrap_or("<unknown author>")
+            );
+        }
+    }
 
     println!("started {} engine process(es)", engines.len());
 

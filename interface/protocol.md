@@ -5,8 +5,8 @@ with engine processes. It follows the shape of the Universal Chess Interface
 (UCI), while using Azul-specific position and move formats.
 
 This document is the project specification for UAI. The executable currently
-contains the configuration, parsing, and child-process stream pieces, while
-process handshakes and command dispatch remain implementation work.
+contains the configuration, parsing, child-process stream, and UAI handshake
+pieces, while command dispatch remains implementation work.
 
 ## Transport
 
@@ -119,6 +119,6 @@ recovered through an `error` response.
 
 This is a project-local draft. Changes to command names, response grammar, or
 move/position encoding must be made here first and covered by interface tests.
-The protocol is intentionally versionless until command dispatch and the
-engine lifecycle are implemented; a future handshake option can advertise a
-protocol version if compatibility requirements emerge.
+The protocol is intentionally versionless until command dispatch is
+implemented; a future handshake option can advertise a protocol version if
+compatibility requirements emerge.
