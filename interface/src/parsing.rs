@@ -99,8 +99,8 @@ impl FromAzulFEN for Board {
                 if tile_count == 0 {
                     continue;
                 }
-                for n in 0..tile_count {
-                    holds[i][n] = Some(tile_type);
+                for hold in holds[i].iter_mut().take(tile_count) {
+                    *hold = Some(tile_type);
                 }
             }
             builder = builder.holds(holds);

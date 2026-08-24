@@ -17,10 +17,7 @@ pub mod format;
 pub mod parsing;
 pub mod protocol;
 
-use std::{
-    io::{self, Read},
-    process::Command,
-};
+use std::{io, process::Command};
 
 use azul_movegen::GameState;
 use clap::Parser;

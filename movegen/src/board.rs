@@ -67,7 +67,7 @@ impl Board {
                 continue;
             }
             // A completed pattern line cannot accept more tiles this round.
-            if hold.iter().filter(|tile| tile.is_some()).count() >= row_idx + 1 {
+            if hold.iter().filter(|tile| tile.is_some()).count() > row_idx {
                 continue;
             }
             // A tile type may appear only once in each wall row.
