@@ -84,8 +84,8 @@ both `tc` and `st` reject the command line.
 | `--check-engines` | Perform an engine handshake check. |
 | `--summary` | Print results after rounds or matches. |
 | `--debug` | Display engine input and output. |
-| `--log` | Write engine communication to a log. |
-| `--stderr` | Display command-line or engine error messages. |
+| `--log` | Write engine commands, stdout, and stderr to a sibling `.log` file next to `--out`. |
+| `--stderr` | Display engine stderr while preserving protocol stdout for the interface. |
 | `--quiet` | Suppress normal output, leaving errors and final results. |
 
 Clap also provides `--help`. Run `cargo run -p interface -- --help` to view

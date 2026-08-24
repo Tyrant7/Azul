@@ -2,10 +2,14 @@
 
 use std::{
     ffi::OsString,
-    io::{self, BufRead, BufReader, Read, Write},
+    fs::File,
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
-    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -18,6 +22,41 @@ pub(crate) struct EngineProcess {
     stderr: Receiver<io::Result<String>>,
     stdout_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
+    diagnostics: Option<Arc<ProcessDiagnostics>>,
+    engine_index: usize,
+}
+
+/// Shares engine stream logging and optional stderr display across processes.
+pub(crate) struct ProcessDiagnostics {
+    show_stderr: bool,
+    log: Option<Mutex<BufWriter<File>>>,
+}
+
+impl ProcessDiagnostics {
+    /// Creates a diagnostics sink, truncating an existing log file.
+    pub(crate) fn new(show_stderr: bool, log_path: Option<PathBuf>) -> io::Result<Self> {
+        let log = log_path
+            .map(File::create)
+            .transpose()?
+            .map(BufWriter::new)
+            .map(Mutex::new);
+        Ok(Self { show_stderr, log })
+    }
+
+    /// Records one command or stream line for an engine.
+    fn record(&self, engine_index: usize, direction: &str, line: &str) -> io::Result<()> {
+        if direction == "stderr" && self.show_stderr {
+            eprintln!("[engine {engine_index} stderr] {line}");
+        }
+        if let Some(log) = &self.log {
+            let mut log = log
+                .lock()
+                .map_err(|_| io::Error::other("engine log lock was poisoned"))?;
+            writeln!(log, "[engine {engine_index} {direction}] {line}")?;
+            log.flush()?;
+        }
+        Ok(())
+    }
 }
 
 /// Describes how to launch one engine process.
@@ -78,7 +117,19 @@ impl EngineProcess {
             stderr: stderr_rx,
             stdout_thread: Some(stdout_thread),
             stderr_thread: Some(stderr_thread),
+            diagnostics: None,
+            engine_index: 0,
         })
+    }
+
+    /// Attaches shared diagnostics to this process.
+    pub(crate) fn configure_diagnostics(
+        &mut self,
+        diagnostics: Option<Arc<ProcessDiagnostics>>,
+        engine_index: usize,
+    ) {
+        self.diagnostics = diagnostics;
+        self.engine_index = engine_index;
     }
 
     /// Starts an engine from a reusable launch specification.
@@ -97,6 +148,8 @@ impl EngineProcess {
         shutdown_timeout: Duration,
     ) -> io::Result<()> {
         let replacement = Self::spawn_launch(launch)?;
+        let mut replacement = replacement;
+        replacement.configure_diagnostics(self.diagnostics.clone(), self.engine_index);
         let old = std::mem::replace(self, replacement);
         let _ = old.shutdown(shutdown_timeout);
         Ok(())
@@ -116,17 +169,53 @@ impl EngineProcess {
             .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "engine stdin is closed"))?;
         stdin.write_all(line.as_bytes())?;
         stdin.write_all(b"\n")?;
-        stdin.flush()
+        stdin.flush()?;
+        if let Some(diagnostics) = &self.diagnostics {
+            diagnostics.record(self.engine_index, "command", line)?;
+        }
+        self.drain_stderr()
     }
 
     /// Reads one protocol line from stdout, waiting up to `timeout`.
     pub(crate) fn recv_stdout(&mut self, timeout: Duration) -> io::Result<Option<String>> {
-        receive_line(&self.stdout, timeout)
+        let result = receive_line(&self.stdout, timeout);
+        self.drain_stderr()?;
+        if let Ok(Some(line)) = &result {
+            if let Some(diagnostics) = &self.diagnostics {
+                diagnostics.record(self.engine_index, "stdout", line)?;
+            }
+        }
+        result
     }
 
     /// Reads one diagnostic line from stderr, waiting up to `timeout`.
     pub(crate) fn recv_stderr(&mut self, timeout: Duration) -> io::Result<Option<String>> {
-        receive_line(&self.stderr, timeout)
+        match receive_line(&self.stderr, timeout)? {
+            Some(line) => {
+                self.record_stderr(&line)?;
+                Ok(Some(line))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Drains currently available diagnostic stderr lines without blocking.
+    pub(crate) fn drain_stderr(&mut self) -> io::Result<()> {
+        loop {
+            match self.stderr.try_recv() {
+                Ok(Ok(line)) => self.record_stderr(&line)?,
+                Ok(Err(error)) => return Err(error),
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return Ok(()),
+            }
+        }
+    }
+
+    /// Records one stderr line through the configured diagnostics sink.
+    fn record_stderr(&self, line: &str) -> io::Result<()> {
+        if let Some(diagnostics) = &self.diagnostics {
+            diagnostics.record(self.engine_index, "stderr", line)?;
+        }
+        Ok(())
     }
 
     /// Returns the child exit status when it has exited without blocking.
@@ -216,8 +305,14 @@ fn receive_line(
 
 #[cfg(test)]
 mod tests {
-    use super::EngineProcess;
-    use std::{io::ErrorKind, process::Command, time::Duration};
+    use super::{EngineProcess, ProcessDiagnostics};
+    use std::{
+        fs,
+        io::ErrorKind,
+        process::Command,
+        sync::Arc,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     /// Builds a platform-native child command for process lifecycle tests.
     fn fixture(script: &str) -> Command {
@@ -325,5 +420,38 @@ mod tests {
         let status = process.shutdown(short_timeout()).unwrap();
 
         assert!(status.success());
+    }
+
+    #[test]
+    fn diagnostics_log_commands_and_child_streams() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo stdout:!line!& 1>&2 echo stderr";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf 'stdout:%s\\n' \"$line\"; printf 'stderr\\n' >&2";
+
+        let log_path = std::env::temp_dir().join(format!(
+            "azul-interface-log-{}.log",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let diagnostics = Arc::new(ProcessDiagnostics::new(false, Some(log_path.clone())).unwrap());
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        process.configure_diagnostics(Some(diagnostics), 7);
+        process.send_line("ping").unwrap();
+
+        assert_eq!(
+            process.recv_stdout(short_timeout()).unwrap(),
+            Some(String::from("stdout:ping"))
+        );
+        process.drain_stderr().unwrap();
+        drop(process);
+
+        let log = fs::read_to_string(&log_path).unwrap();
+        assert!(log.contains("[engine 7 command] ping"));
+        assert!(log.contains("[engine 7 stdout] stdout:ping"));
+        assert!(log.contains("[engine 7 stderr] stderr"));
+        let _ = fs::remove_file(log_path);
     }
 }

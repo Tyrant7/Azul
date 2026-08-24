@@ -20,7 +20,7 @@ pub mod protocol;
 
 mod process;
 
-use std::{io, time::Duration};
+use std::{io, path::PathBuf, sync::Arc, time::Duration};
 
 use azul_movegen::GameState;
 use clap::Parser;
@@ -28,7 +28,7 @@ use rand::{Rng, seq::IndexedRandom};
 
 use crate::{
     format::ProtocolFormat,
-    process::{EngineLaunch, EngineProcess},
+    process::{EngineLaunch, EngineProcess, ProcessDiagnostics},
     protocol::{Cli, GameResult, Protocol, play_uai_game_with_recovery, uai_ready},
 };
 
@@ -56,6 +56,19 @@ fn main() {
         .iter()
         .map(|launch| EngineProcess::spawn_launch(launch).expect("Failed to start engine"))
         .collect::<Vec<_>>();
+
+    let diagnostics = if cli.stderr || cli.log {
+        let log_path = cli.log.then(|| diagnostics_log_path(&cli.out));
+        Some(Arc::new(
+            ProcessDiagnostics::new(cli.stderr, log_path)
+                .expect("Failed to initialize engine diagnostics"),
+        ))
+    } else {
+        None
+    };
+    for (engine_index, engine) in engines.iter_mut().enumerate() {
+        engine.configure_diagnostics(diagnostics.clone(), engine_index);
+    }
 
     let startup_timeout = Duration::from_secs(cli.timeout as u64);
     for (player, (engine, config)) in engines.iter_mut().zip(&cli.engines).enumerate() {
@@ -162,6 +175,17 @@ fn main() {
     for engine in engines {
         let _ = engine.shutdown(Duration::from_millis(100));
     }
+}
+
+/// Derives the default engine communication log path from the result path.
+fn diagnostics_log_path(output_path: &str) -> PathBuf {
+    let mut path = PathBuf::from(output_path);
+    if path.as_os_str().is_empty() {
+        path.push("azul-interface.log");
+    } else {
+        path.set_extension("log");
+    }
+    path
 }
 
 /// Identifies startup failures that may be fixed by replacing the process.
