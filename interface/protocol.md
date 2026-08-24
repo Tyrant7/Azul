@@ -66,13 +66,29 @@ but current snapshots use complete AzulFEN states instead.
 | `option name <name> type <type> ...` | Optional | Describes a configurable engine option. |
 | `uaiok` | Yes after `uai` | Completes the UAI handshake. |
 | `readyok` | Yes after `isready` | Confirms the engine is ready. |
-| `info ...` | Optional during `go` | Reports search progress or evaluation information. |
+| `info ...` | Optional during `go` | Non-terminal search progress or evaluation update. The interface may ignore the line and must continue waiting for `bestmove`. |
 | `bestmove <move>` | Yes after `go` | Returns the selected move in the [move format](#move-format). |
-| `error <text>` | When needed | Reports a malformed command or unusable position. |
+| `error <text>` | When needed | Terminal failure for the current command or position. The interface must abort that operation and must not treat the line as a move or readiness response. |
 
 An engine must emit exactly one `uaiok` for each completed `uai` handshake and
 exactly one `bestmove` for each `go` request, unless the process exits or the
 interface reports a fatal error.
+
+### Response prefixes
+
+The response prefix determines how the interface handles the rest of the line:
+
+- `info ` is an asynchronous, non-terminal update. An engine may emit any
+  number of `info` lines while processing `go`; they do not complete the
+  request and do not replace `bestmove`.
+- `error ` is a terminal failure response. The remainder of the line is a
+  human-readable explanation. It applies to the current command or position,
+  and the interface should stop waiting for that command's normal response.
+
+For example, `info depth 8 score 12` reports search progress, while `error
+invalid position` reports that the engine could not accept the requested
+position. Diagnostic logging that is unrelated to the protocol belongs on
+standard error, not in an `info` or `error` response.
 
 ## Move format
 
