@@ -215,6 +215,48 @@ fn first_centre_pick_assigns_the_token_and_penalty() {
 }
 
 #[test]
+fn round_over_requires_the_centre_and_all_factory_bowls_to_be_empty() {
+    let mut bowls = empty_bowls(6);
+    bowls[0] = Bowl::from_tiles(vec![2]);
+    let mut state = custom_state(vec![Board::default(); 2], bowls);
+
+    assert!(!state.round_over());
+    state
+        .make_move(&Move {
+            bowl: 0,
+            tile_type: 2,
+            row: Row::Floor,
+        })
+        .unwrap();
+    assert!(state.round_over());
+}
+
+#[test]
+fn game_over_is_detected_after_a_completed_pattern_line_is_placed() {
+    let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+    holds[0][0] = Some(0);
+    let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+    for col in 1..BOARD_DIMENSION {
+        placed[0][col] = Some(Board::get_tile_type_at_pos(0, col));
+    }
+    let state = GameState::builder()
+        .boards(vec![
+            Board::builder().holds(holds).placed(placed).build(),
+            Board::default(),
+        ])
+        .bowls(empty_bowls(6))
+        .bag(Bag::default())
+        .set_seed(29)
+        .build()
+        .unwrap();
+    let mut state = state;
+
+    assert!(!state.is_game_over());
+    state.setup_next_round();
+    assert!(state.is_game_over());
+}
+
+#[test]
 fn setup_tracks_discarded_tiles_without_counting_the_token() {
     let mut board = Board::default();
     board.hold_tiles(2, 2, Row::Floor, 1).unwrap();

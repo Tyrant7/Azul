@@ -157,6 +157,60 @@ fn place_holds_reports_physical_tiles_but_not_the_first_player_token() {
 }
 
 #[test]
+fn penalty_scoring_matches_the_floor_table_and_caps_after_seven_spaces() {
+    let expected_penalties = [0, 1, 2, 4, 6, 8, 11, 14, 14];
+
+    for (penalty_tiles, expected_penalty) in expected_penalties.into_iter().enumerate() {
+        let mut board = Board::builder().score(100).build();
+        board.hold_tiles(0, penalty_tiles, Row::Floor, 0).unwrap();
+
+        board.place_holds();
+
+        assert_eq!(board.get_score(), 100 - expected_penalty);
+    }
+}
+
+#[test]
+fn first_player_token_occupies_a_scoring_space_but_is_not_a_tile() {
+    let mut board = Board::builder().score(10).build();
+    board.hold_tiles(0, 2, Row::Floor, 1).unwrap();
+
+    assert_eq!(board.place_holds(), 2);
+    assert_eq!(board.get_score(), 6);
+}
+
+#[test]
+fn multiple_completed_pattern_lines_score_and_clear_together() {
+    let mut board = Board::default();
+    board.hold_tiles(0, 1, Row::Wall(0), 0).unwrap();
+    board.hold_tiles(0, 2, Row::Wall(1), 0).unwrap();
+
+    assert_eq!(board.place_holds(), 1);
+    assert_eq!(board.get_score(), 2);
+    assert!(board.holds().iter().flatten().all(Option::is_none));
+}
+
+#[test]
+fn one_placement_can_award_row_and_tile_type_bonuses_together() {
+    let mut placed = empty_grid();
+    for col in 1..BOARD_DIMENSION {
+        placed[0][col] = Some(Board::get_tile_type_at_pos(0, col));
+    }
+    for row in 1..BOARD_DIMENSION {
+        placed[row][row] = Some(0);
+    }
+    let mut holds = empty_grid();
+    holds[0][0] = Some(0);
+
+    let mut board = Board::builder().placed(placed).holds(holds).build();
+    board.place_holds();
+
+    assert_eq!(board.get_score(), 17);
+    assert!(board.bonuses().rows[0]);
+    assert!(board.bonuses().tile_types[0]);
+}
+
+#[test]
 fn place_holds_scores_an_isolated_tile_and_clears_the_pattern_line() {
     let mut board = Board::default();
     board.hold_tiles(0, 1, Row::Wall(0), 0).unwrap();
