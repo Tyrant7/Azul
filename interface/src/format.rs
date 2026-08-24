@@ -6,7 +6,8 @@ use crate::{parsing::ToAzulFEN, protocol::Protocol};
 pub trait ProtocolFormat {
     /// Formats the value for a human reader.
     fn fmt_human(&self) -> String;
-    /// Formats the value using the current AzulFEN/UAI-like representation.
+    /// Formats the value using the [AzulFEN representation](../azulfen.md)
+    /// used by the UAI protocol.
     fn fmt_uci_like(&self) -> String;
 
     /// Selects a formatter based on the requested protocol mode.

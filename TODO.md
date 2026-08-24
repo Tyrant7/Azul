@@ -1,8 +1,6 @@
 # TODO
 
 ## Interface
-- Use a custom markdown file for UAI
-  - Once complete, change the links in the docstrings and review that
 - Command line argument documentation
 - Full docstrings
 - Tests

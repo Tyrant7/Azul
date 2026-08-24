@@ -20,7 +20,7 @@ pub struct EngineConfig {
 pub enum Protocol {
     /// Human-readable state and move interaction.
     Human,
-    /// The draft Universal Azul Interface protocol.
+    /// The [draft Universal Azul Interface protocol](../protocol.md).
     UAI,
 }
 

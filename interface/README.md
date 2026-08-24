@@ -3,7 +3,7 @@
 The Azul Interface has been created to facilitate running games between various 
 Azul playing programs using the UAI (Universal Azul Interface) protocol. 
 
-See the [protocol docs](/interface/protocol.md) for more info on UAI. 
+See the [UAI protocol specification](protocol.md) for more information on UAI.
 
 ## Instructions for Use
 

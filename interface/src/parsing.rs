@@ -10,13 +10,13 @@ const RNG_STATE_PREFIX: &str = "xoshiro256plusplus:";
 #[derive(Debug)]
 pub struct ParseGameStateError;
 
-/// Constructs a value from an AzulFEN string or component.
+/// Constructs a value from an [AzulFEN](../azulfen.md) string or component.
 pub trait FromAzulFEN: Sized {
     /// Parses an AzulFEN representation.
     fn from_azul_fen(fen: &str) -> Result<Self, ParseGameStateError>;
 }
 
-/// Serializes a value to its AzulFEN representation.
+/// Serializes a value to its [AzulFEN](../azulfen.md) representation.
 pub trait ToAzulFEN {
     /// Returns the AzulFEN representation.
     fn to_azul_fen(&self) -> String;
@@ -25,7 +25,7 @@ pub trait ToAzulFEN {
 impl FromAzulFEN for Bowl {
     /// Creates a bowl from the given AzulFEN bowl component.
     /// It is important to note that the bowl component is not an entire FEN.
-    /// See `interface/azulfen.md` in the repository for the format specification.
+    /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(bowl_fen: &str) -> Result<Self, ParseGameStateError> {
         if bowl_fen.chars().nth(0).ok_or(ParseGameStateError)? == '-' {
             Ok(Bowl::default())
@@ -43,7 +43,7 @@ impl FromAzulFEN for Bowl {
 impl FromAzulFEN for Board {
     /// Generates a board matching the given board component of a given AzulFEN.
     /// It is important to note that the board component is not an entire FEN.
-    /// See `interface/azulfen.md` in the repository for the format specification.
+    /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut builder = Board::builder();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
@@ -142,7 +142,7 @@ impl FromAzulFEN for Board {
 impl FromAzulFEN for GameState {
     /// Parses the given AzulFEN into a gamestate.
     /// Will error if the given AzulFEN is invalid.
-    /// See `interface/azulfen.md` in the repository for the format specification.
+    /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(azul_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut sections = azul_fen.split("| ");
 
@@ -233,7 +233,7 @@ impl ToAzulFEN for GameState {
     ///
     /// The metadata includes the optional game seed, current random state, and
     /// discard count, allowing exact snapshot restoration and tile accounting.
-    /// See `interface/azulfen.md` in the repository for the format specification.
+    /// See the [AzulFEN format specification](../azulfen.md).
     fn to_azul_fen(&self) -> String {
         // Serialize board components.
         let mut azul_fen = String::new();

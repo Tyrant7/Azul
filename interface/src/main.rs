@@ -3,7 +3,7 @@
 //! This crate sits above [`azul_movegen`]. It parses engine and match
 //! configuration, formats game state for humans or machine clients, converts
 //! game state to and from AzulFEN, and parses the six-digit move notation used
-//! by the current UAI draft.
+//! by the [current UAI draft](../protocol.md).
 //!
 //! The [`protocol`] module owns CLI configuration, protocol and time-control
 //! types, and move parsing. The [`mod@format`] module renders movegen values,
