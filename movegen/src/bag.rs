@@ -1,27 +1,31 @@
 use rand::{rng, seq::SliceRandom};
 
-/// This struct is for handling a shuffled `Vec<T>` of items.
-/// Items are removed from the bag when accessed and bags may be restocked at any time.
+/// A shuffled collection from which items are drawn and removed.
+///
+/// Restocking replaces the existing contents with a newly shuffled collection.
 #[derive(Debug, Default)]
 pub struct Bag<T> {
     items: Vec<T>,
 }
 
 impl<T> Bag<T> {
-    /// Creates a new bag from `items` after shuffling them.
+    /// Creates a bag containing `items` in random order.
     pub fn new(mut items: Vec<T>) -> Self {
         items.shuffle(&mut rng());
         Bag { items }
     }
 
-    /// Restocks the bag with the given `items` after shuffling them.  
-    /// Items previously in this bag are not retained.
+    /// Replaces the contents with `items` in random order.
+    ///
+    /// Items previously in the bag are discarded.
     pub fn restock(&mut self, mut items: Vec<T>) {
         items.shuffle(&mut rng());
         self.items = items;
     }
 
-    /// Getter for the items in this bag.
+    /// Returns the remaining items in their current draw order.
+    ///
+    /// The iterator implementation removes items from the end of this vector.
     pub fn items(&self) -> &Vec<T> {
         &self.items
     }

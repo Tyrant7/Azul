@@ -1,32 +1,35 @@
 use crate::Tile;
 
-/// A structure for holding groups of tiles according to Azul's bowl rules.
+/// A sorted collection of tiles held by a factory bowl or the centre.
 #[derive(Debug, Default)]
 pub struct Bowl {
     tiles: Vec<Tile>,
 }
 
 impl Bowl {
+    /// Creates a bowl containing `tiles` in sorted order.
     pub fn from_tiles(tiles: Vec<Tile>) -> Self {
         let mut bowl = Bowl::default();
         bowl.fill(tiles);
         bowl
     }
 
-    /// Assigns this bowl's tiles.
+    /// Replaces the bowl's tiles and sorts them by tile type.
     pub fn fill(&mut self, tiles: Vec<Tile>) {
         self.tiles = tiles;
         self.tiles.sort();
     }
 
-    /// Extends this bowl's tiles.
+    /// Adds `tiles` to the bowl and keeps the stored tiles sorted.
     pub fn extend(&mut self, tiles: &Vec<Tile>) {
         self.tiles.extend(tiles);
         self.tiles.sort();
     }
 
-    /// Returns the tiles of the given type from this bowl, as well as the remaining tiles. Calling this function
-    /// clears this bowl's stored tiles.
+    /// Removes all tiles of `tile_type` and returns them with the other tiles.
+    ///
+    /// The bowl is empty after this call; callers can place the returned remaining
+    /// tiles into another bowl as required by the game rules.
     pub fn take_tiles(&mut self, tile_type: Tile) -> (Vec<Tile>, Vec<Tile>) {
         let mut take = Vec::new();
         let mut keep = Vec::new();
@@ -41,14 +44,14 @@ impl Bowl {
         (take, keep)
     }
 
-    /// Returns a `Vec<Tile>` of all unique tile types owned by this bowl.
+    /// Returns the distinct tile types in sorted order.
     pub fn get_tile_types(&self) -> Vec<Tile> {
         let mut tiles = self.tiles.clone();
         tiles.dedup();
         tiles
     }
 
-    /// Getter for the tiles in this bowl.
+    /// Returns all tiles currently in the bowl in sorted order.
     pub fn tiles(&self) -> &Vec<Tile> {
         &self.tiles
     }

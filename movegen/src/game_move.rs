@@ -1,10 +1,9 @@
 use crate::{Tile, row::Row};
 
-/// A move in gameplay.
-/// # Properties
-/// * `bowl`: the index of the selected bowl.
-/// * `tile_type`: the type of tile taken from the bowl.
-/// * `row`: The row wished to hold the tiles taken from the selected bowl.
+/// A selection of one tile type from one bowl and its destination on the active board.
+///
+/// Bowl indices and tile types are zero-based. [`Row::Wall`] also uses a zero-based
+/// row index; [`Row::Floor`] represents the penalty area.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Move {
     pub bowl: usize,
@@ -12,6 +11,6 @@ pub struct Move {
     pub row: Row,
 }
 
-/// Attempting to play a move which is not valid will produce this error.
+/// Returned when a move is not present in the current game's legal move list.
 #[derive(Debug)]
 pub struct IllegalMoveError;

@@ -6,19 +6,19 @@ use crate::{
     game_move::{IllegalMoveError, Move},
 };
 
-/// The number of tiles of each type to be added to the bag at the beginning of the game, and to be
-/// used for reference during round setup.
+/// The number of tiles of each type in a complete game set.
 const TILES_PER_TYPE: usize = 20;
 
-/// The number of tiles that each bowl is restocked to contain during the roubnd setup.
+/// The number of tiles placed in each factory bowl during round setup.
 const BOWL_CAPACITY: usize = 4;
 
-/// The index of the centre tile space. Is area is not technically a bowl in the original game, but for
-/// simplicity of the code, this decision has been made here.
+/// The index used for the centre area, which is represented as a bowl in this model.
 const CENTRE_BOWL_IDX: usize = 0;
 
-/// Represents a complete gamestate for a given number of players.
-/// Supports generation from and serialization to a custom AzulFEN [TODO: link].
+/// Complete mutable state for an Azul game.
+///
+/// The state contains one board per player, the factory bowls and centre area,
+/// the tile bag, the active player, and the owner of the first-player token.
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
@@ -28,16 +28,17 @@ pub struct GameState {
     first_token_owner: Option<usize>,
 }
 
-/// Bowl formula is given by 2n + 1, with an additional bowl for the centre space.
+/// Returns the number of factory bowls plus the centre area for `players` players.
+///
+/// Azul uses `2n + 1` factory bowls; this model adds one bowl for the centre.
 fn get_bowl_count(players: usize) -> usize {
     players * 2 + 2
 }
 
-/// Generates a default tileset for a game setup.
-/// By default, [TILES_PER_TYPE] of each tile type are given.
+/// Generates the standard game set with [`TILES_PER_TYPE`] tiles of each type.
 fn get_default_tileset() -> Vec<Tile> {
     let mut tiles = Vec::new();
-    // There should always be the same number of tiles as board width
+    // Azul has one tile type for each wall dimension.
     for t in 0..BOARD_DIMENSION {
         tiles.append(&mut vec![t as Tile; TILES_PER_TYPE]);
     }
@@ -45,7 +46,9 @@ fn get_default_tileset() -> Vec<Tile> {
 }
 
 impl GameState {
-    /// Creates a new gamestate for the given number of players.
+    /// Creates a new game with empty bowls and boards for `players` players.
+    ///
+    /// Call [`GameState::setup_next_round`] before requesting or applying moves.
     pub fn new(players: usize) -> Self {
         GameState {
             active_player: 0,
@@ -69,25 +72,23 @@ impl GameState {
         first_token_owner: Option<usize>,
     }
 
-    /// Performs a variety of tasks to setup the beginning of a round, including
-    /// - Placing held tiles
-    /// - Applying previous round penalties
-    /// - Refilling bowls
-    /// - Restocking the bag, if necessary
-    /// - Determining the first player
-    /// - Resetting the first player token holder
+    /// Resolves the previous round and prepares the next one.
+    ///
+    /// This places completed pattern-line tiles, applies board scoring and
+    /// penalties, fills the factory bowls, restocks the bag when necessary,
+    /// selects the next active player, and clears first-player-token ownership.
     pub fn setup_next_round(&mut self) {
-        // Place each board's held tiles and apply penalties
+        // Resolve each board before refilling the bowls.
         for board in self.boards.iter_mut() {
             board.place_holds();
         }
 
-        // Fill each bowl, skipping the centre
+        // Fill factory bowls; index zero is reserved for the centre.
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
         for bowl in bowls.iter_mut().skip(1) {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
-                // Refill the bag with all tiles currently not in play
+                // Rebuild the bag from tiles not currently held or placed.
                 let mut used_tiles = Vec::new();
                 for board in &self.boards {
                     used_tiles.extend(board.get_active_tiles());
@@ -109,13 +110,15 @@ impl GameState {
             bowl.fill(next.clone());
         }
 
-        // At the end of setup, the player with the first player's token goes first
+        // The first-player-token owner starts the new round.
         self.active_player = self.first_token_owner.unwrap_or_default();
         self.first_token_owner = None;
     }
 
-    /// Returns a list of all valid moves in the current gamestate.
-    /// This list includes penalizing moves, such as placing tiles to the floor position.
+    /// Returns all legal moves for the active player.
+    ///
+    /// The list includes moves that send tiles to the floor and therefore incur
+    /// penalties. An empty bowl contributes no moves.
     pub fn get_valid_moves(&self) -> Vec<Move> {
         let board = self.boards.get(self.active_player).expect("Invalid player");
         let mut moves = Vec::new();
@@ -133,22 +136,24 @@ impl GameState {
         moves
     }
 
-    /// Makes a move, modifying the current gamestate.
-    /// Will error if the given move is illegal.
+    /// Applies `choice` to the current state.
+    ///
+    /// Returns [`IllegalMoveError`] when `choice` is not legal for the active
+    /// player and current bowl contents.
     pub fn make_move(&mut self, choice: &Move) -> Result<(), IllegalMoveError> {
         let valid_moves = self.get_valid_moves();
         if !valid_moves.contains(choice) {
             return Err(IllegalMoveError);
         }
 
-        // Get the tiles and update the bowls
+        // Remove the selected tile type from the chosen bowl.
         let tiles = self
             .bowls
             .get_mut(choice.bowl)
             .ok_or(IllegalMoveError)?
             .take_tiles(choice.tile_type);
 
-        // A penalty is given if we're the first player to pick from the centre
+        // The first player to take from the centre receives the token penalty.
         let penalty = if choice.bowl == CENTRE_BOWL_IDX && self.first_token_owner.is_none() {
             self.first_token_owner = Some(self.active_player);
             1
@@ -156,20 +161,20 @@ impl GameState {
             0
         };
 
-        // Put the tiles into the appropriate row
+        // Put the selected tiles into the active player's destination.
         let active_board = self
             .boards
             .get_mut(self.active_player)
             .expect("Invalid player");
         active_board.hold_tiles(choice.tile_type, tiles.0.len(), choice.row, penalty)?;
 
-        // Move the remaining tiles to the centre
+        // Move the other tiles from the selected bowl to the centre.
         self.bowls
             .get_mut(CENTRE_BOWL_IDX)
             .expect("Invalid bowl")
             .extend(&tiles.1);
 
-        // Cycle to the next player's turn
+        // Advance to the next player, wrapping at the end of the player list.
         self.active_player += 1;
         if self.active_player >= self.boards.len() {
             self.active_player = 0;
@@ -177,19 +182,21 @@ impl GameState {
         Ok(())
     }
 
-    /// Returns true if all bowls are empty, otherwise false.
+    /// Returns `true` when no bowl contains any tiles.
     pub fn round_over(&self) -> bool {
         self.bowls.iter().all(|b| b.get_tile_types().is_empty())
     }
 
-    /// Returns true if any player has completed a horizontal line on their board.
+    /// Returns `true` when any player has completed a horizontal wall line.
     pub fn is_game_over(&self) -> bool {
         self.boards.iter().any(|b| b.count_horizontal_lines() > 0)
     }
 
-    /// Gets the index of the board with the highest score.
-    /// In the case of a tie, the number of horizontal lines are used.
-    /// If there is still a tie, the lower-indexed player will be returned.  
+    /// Returns the index of the board selected as the winner.
+    ///
+    /// Scores are compared first, then completed horizontal lines. If both
+    /// values are equal, the current iterator-based implementation selects the
+    /// later board index.
     pub fn get_winner(&self) -> usize {
         self.boards
             .iter()
@@ -200,6 +207,7 @@ impl GameState {
     }
 }
 
+/// Builder for constructing a [`GameState`] from explicit component state.
 #[derive(Default)]
 pub struct GameStateBuilder {
     active_player: usize,
@@ -210,31 +218,37 @@ pub struct GameStateBuilder {
 }
 
 impl GameStateBuilder {
+    /// Sets the index of the active player.
     pub fn active_player(mut self, active_player: usize) -> Self {
         self.active_player = active_player;
         self
     }
 
+    /// Sets the player boards.
     pub fn boards(mut self, boards: Vec<Board>) -> Self {
         self.boards = boards;
         self
     }
 
+    /// Sets the factory bowls, including the centre at index zero.
     pub fn bowls(mut self, bowls: Vec<Bowl>) -> Self {
         self.bowls = bowls;
         self
     }
 
+    /// Sets the tile bag.
     pub fn bag(mut self, bag: Bag<Tile>) -> Self {
         self.bag = bag;
         self
     }
 
+    /// Sets the player holding the first-player token, if any.
     pub fn first_token_owner(mut self, first_token_owner: Option<usize>) -> Self {
         self.first_token_owner = first_token_owner;
         self
     }
 
+    /// Builds a game state from the configured fields.
     pub fn build(self) -> GameState {
         GameState {
             active_player: self.active_player,

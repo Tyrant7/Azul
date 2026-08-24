@@ -19,14 +19,14 @@
 //!
 //! [rulebook]: https://cdn.1j1ju.com/medias/03/14/fd-azul-rulebook.pdf
 
-/// The alias type for tiles. Since held and placed tiles have no unique properties beyond needing
-/// to be differentiable, `usize` was used for the underlying type for tiles.
+/// Identifies a tile type. Tile instances have no state beyond their type, so a small integer is sufficient.
 pub type Tile = usize;
 
-/// Macro to help make getters.
+/// Generates read-only reference getters for the listed fields.
 macro_rules! getters {
     ($($field:ident : $ty:ty), *$(,)?) => {
         $(
+            #[doc = concat!("Returns a reference to the `", stringify!($field), "` field.")]
             pub fn $field(&self) -> &$ty {
                 &self.$field
             }
