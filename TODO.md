@@ -2,7 +2,6 @@
 
 ## Movegen
 - Finish README file
-- Define and test remaining structural invariants for bowls, bags, board holds, and placed tiles
 - Verify all scoring, penalty, bonus, round-ending, and tie-breaking edge cases
 - Add efficient legal-move generation and avoid unnecessary allocations where profiling supports it
 
