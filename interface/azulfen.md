@@ -1,80 +1,126 @@
-# AzulFEN
+# AzulFEN v1
 
-AzulFEN is a way of encoding a boardstate so it can be reconstructed later. 
+AzulFEN is the versioned, line-oriented snapshot format used to persist an
+Azul [`GameState`](../movegen/README.md) and transmit it through UAI. Version 1
+is deliberately strict: fields use exact separators, numeric values are
+ASCII decimal, tile types are `0` through `4`, and serialized output is the
+canonical form accepted by the parser.
 
-This system is based off of Chess' FEN encodings and works as follows:
+A complete AzulFEN contains exactly one final newline and has this shape:
 
-## Boards:
+```text
+azulfen:v1 <board> ; [<board> ; ...] | <bowl> <bowl> ... | <bag> | <active-player> <token-owner> <seed> <rng-state> <discarded-tiles>\n
+```
 
-Each board's placed tiles are broken down into their own FEN-style string where numbers represent N empty spaces,
-"/" denotes a new line, and a - represents a tile in that position
-e.x.  5/5/5/5/5 is an empty board
-while 5/5/2-2/5/5 would have a single tile in the centre
+The parser requires the `azulfen:v1` prefix. Unknown versions, unversioned
+snapshots, extra fields, malformed separators, and missing final newlines are
+rejected. The serializer always emits the complete five-field metadata form.
 
-Each row of a board's hold section can be encoded with two numbers. The first represents the tile type in that row,
-and the second representing the number of tiles. The encodings for each row are written sequentially
-e.x.  0042000000 corresponds to 2 tiles of type 4 in the second row
+## Boards
 
-For each board, the collected bonuses also need to be known. Each bonus type is encoded individually, in the order of
-[row, column, tile_type], and sequentially to one another, with a space in between where 0 is an uncollected bonus
-and 1 is a collected bonus.
-e.x.  00001 00000 00000 corresponds to having collected only the horizontal bonus for the final row
+Each board is terminated by ` ;`. Multiple boards are separated by one space:
 
-The score, total penalty spaces, and physical penalty-tile count for each board are encoded as
-three numbers at the end of the FEN. The physical count excludes the first-player token.
-e.x.  10 3 2 corresponds to 10 score, 3 occupied penalty spaces, and 2 penalty tiles
+```text
+<placed> <holds> <row-bonuses> <column-bonuses> <tile-bonuses> <score> <penalties> <penalty-tiles> ;
+```
 
-And finally, each board FEN is separated by a semi-colon
+### Placed wall
 
-Altogether a typical board FEN may look something like follows:
-2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 1 ;
+The placed wall has five slash-separated rows. Digits represent runs of empty
+spaces and `-` represents an occupied space. Each row must describe exactly
+five spaces; a digit `0` is not allowed. An occupied tile's type is determined
+by its wall position, so the tile type is not written explicitly.
 
+```text
+5/5/2-2/5/5
+```
 
-## Bowls:
+### Pattern-line holds
 
-The bowl's section is prefixed with a "|" character
+The holds field is exactly ten digits: one tile-type/count pair for each of
+the five pattern lines. Tile types are `0` through `4`; the count must not
+exceed the line capacity. An empty line is encoded as `00`.
 
-Each bowl is encoded as a sequence of numbers corresponding to tile types, each with a space in between
-An empty bowl is denoted with a "-"
-e.x.  000234 - 1132 would correspond to three unique bowls, one centre, one empty, and one full
+```text
+0011000000
+```
 
+### Bonuses and scores
 
-## Bag:
+The row, column, and tile-type bonus fields are each exactly five binary
+digits, in that order. The final four fields are non-negative decimal values:
 
-The bag's section is prefixed with another "|" character
+1. current score;
+2. occupied penalty spaces;
+3. physical penalty tiles.
 
-The bag is simply listed as a sequence of numbers corresponding to tile types
-e.x.  03440140321203
+The physical penalty-tile count may not exceed the occupied penalty-space
+count because the first-player token can occupy a penalty space without being
+a physical tile.
 
+For example, an empty board with score `7`, one occupied penalty space, and one
+physical penalty tile is:
 
-## Active player and first player token:
+```text
+5/5/5/5/5 0000000000 00000 00000 00000 7 1 1 ;
+```
 
-Finally, the active player and first player token owner are encoded at the end in order.
-The optional numeric seed follows them, and the current xoshiro256++ state is encoded as a tagged
-hexadecimal token after the seed, followed by the number of physical tiles in the discard pile.
-These tracking fields are emitted for every newly serialized state.
-e.x.  0 2 corresponds to the active player being player 0, and the first player token owner being player 2
-If nobody owns the first player token, then "-" will be written in its place
-e.x.  0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> 7 records the seed, exact random state,
-and seven discarded physical tiles
+## Bowls
 
-The seed identifies the game or episode seed used to initialize the random stream.
-The state token is the serialization of the random generator's current internal state and is what
-guarantees exact continuation after deserialization. Older FENs containing only the active player,
-token owner, or seed remain readable, but do not contain exact random continuation state.
-When no initial seed is available, the seed position is written as `-` before the state token.
-Older board and metadata sections without tracking fields remain readable, but do not carry exact
-discard accounting.
+The bowl section contains exactly `2 * players + 2` bowls, including the centre
+at index `0`. A bowl is either `-` for empty or a non-empty, sorted sequence
+of tile-type digits:
 
+```text
+0123 - 0011
+```
 
-## Summary
+Tile types outside `0` through `4`, unsorted sequences, embedded whitespace,
+and a bare empty string are invalid. The centre may contain more tiles than a
+factory bowl during play.
 
-In full, a complete AzulFEN may look something like the following:
+## Bag
 
-2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
-1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 0 ;
-| 0123003 - - - 0123 0001
-| 0133041230412404142
-| 0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> 7
+The bag is a sequence of tile-type digits in draw order. It may be empty, but
+every character must be a tile type from `0` through `4`:
 
-AzulFENs should be outputted on a single-line, with a newline as the final character
+```text
+03440140321203
+```
+
+## Metadata
+
+Metadata contains exactly five space-separated fields:
+
+```text
+<active-player> <token-owner> <seed> <rng-state> <discarded-tiles>
+```
+
+- `active-player` is a zero-based player index.
+- `token-owner` is a zero-based player index or `-` when unclaimed.
+- `seed` is the optional initial `u64` seed or `-` when unavailable.
+- `rng-state` is `xoshiro256plusplus:` followed by exactly 64 hexadecimal
+  digits, preserving the current 256-bit generator state.
+- `discarded-tiles` is the number of physical tiles returned to the discard
+  pile.
+
+Example:
+
+```text
+0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> 7
+```
+
+The current RNG state, rather than the initial seed, guarantees exact future
+shuffle reproduction. The seed is retained as episode/game metadata.
+
+## Round trips and compatibility
+
+`GameState::to_azul_fen` emits canonical version-1 output, and
+`GameState::from_azul_fen` accepts only that version. A successful parse must
+round-trip byte-for-byte through serialization. Older unversioned snapshots
+are intentionally not accepted by the strict v1 parser; callers should
+migrate them before loading.
+
+AzulFEN is a state snapshot, not a move history. It contains enough board,
+bag, bowl, turn, discard, seed, and RNG information to continue a game from
+the serialized state.

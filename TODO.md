@@ -5,7 +5,6 @@
 - Implement UAI command dispatch, handshakes, position updates, move requests, quit, and errors
 - Implement time controls, deadlines, engine recovery, logging, and resource limits
 - Implement tournament scheduling, concurrency, resumable results, openings, and summaries
-- Make AzulFEN parsing strict, versioned, and round-trip tested
 
 ## Reinforcement learning system
 

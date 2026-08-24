@@ -60,7 +60,7 @@ The rules engine should remain independent of process management, command-line p
 rules / movegen  ←  interface and engines  ←  tournaments, self-play, and training tools
 ```
 
-AzulFEN is the current persistence and interchange format. The interface formats a `GameState` as board sections, bowl sections, a bag section, and active-player/token metadata. New snapshots include the optional initial seed, current xoshiro256++ state, penalty-tile tracking, and discard count, so loading them reproduces future shuffles and tile accounting exactly. UAI defines the external command and move protocol around that state. Both formats are still evolving; protocol changes should be documented in their respective files and covered by round-trip tests.
+AzulFEN v1 is the current persistence and interchange format. The interface formats a `GameState` as board sections, bowl sections, a bag section, and complete active-player/token metadata. Versioned snapshots include the optional initial seed, current xoshiro256++ state, penalty-tile tracking, and discard count, so loading them reproduces future shuffles and tile accounting exactly. Parsing is strict and accepts only canonical `azulfen:v1` snapshots; see [`interface/azulfen.md`](interface/azulfen.md) for the grammar. UAI defines the external command and move protocol around that state. Both formats are still evolving; protocol changes should be documented in their respective files and covered by round-trip tests.
 
 ## Building and testing
 

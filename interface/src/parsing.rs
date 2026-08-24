@@ -6,6 +6,9 @@ use azul_movegen::{
     board::{BOARD_DIMENSION, BonusTypes},
 };
 
+/// The currently supported AzulFEN wire-format version.
+pub const AZULFEN_VERSION: &str = "azulfen:v1";
+
 const RNG_STATE_PREFIX: &str = "xoshiro256plusplus:";
 
 /// Attempting to parse an invalid AzulFEN or AzulFEN component will produce this error.
@@ -35,15 +38,24 @@ impl FromAzulFEN for Bowl {
     /// It is important to note that the bowl component is not an entire FEN.
     /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(bowl_fen: &str) -> Result<Self, ParseGameStateError> {
-        if bowl_fen.chars().nth(0).ok_or(ParseGameStateError)? == '-' {
+        if bowl_fen == "-" {
             Ok(Bowl::default())
+        } else if bowl_fen.is_empty()
+            || !bowl_fen.is_ascii()
+            || !bowl_fen.bytes().all(|byte| (b'0'..=b'4').contains(&byte))
+        {
+            Err(ParseGameStateError)
         } else {
-            Ok(Bowl::from_tiles(
-                bowl_fen
-                    .chars()
-                    .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
-                    .collect::<Result<Vec<_>, ParseGameStateError>>()?,
-            ))
+            let mut previous = None;
+            let mut tiles = Vec::with_capacity(bowl_fen.len());
+            for byte in bowl_fen.bytes() {
+                if previous.is_some_and(|tile| tile > byte) {
+                    return Err(ParseGameStateError);
+                }
+                previous = Some(byte);
+                tiles.push((byte - b'0') as Tile);
+            }
+            Ok(Bowl::from_tiles(tiles))
         }
     }
 }
@@ -53,13 +65,10 @@ impl FromAzulFEN for Board {
     /// It is important to note that the board component is not an entire FEN.
     /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
-        let mut builder = Board::builder();
-        let parts: Vec<_> = board_fen.split_whitespace().collect();
-        let penalty_tiles = match parts.len() {
-            7 => None,
-            8 => Some(parts[7]),
-            _ => return Err(ParseGameStateError),
-        };
+        let parts: Vec<_> = board_fen.split(' ').collect();
+        if parts.len() != 8 || parts.iter().any(|part| part.is_empty()) {
+            return Err(ParseGameStateError);
+        }
         let [
             placed_parts,
             held,
@@ -68,83 +77,110 @@ impl FromAzulFEN for Board {
             bonus_tile_types,
             score,
             penalties,
-            ..,
+            penalty_tiles,
         ] = parts.as_slice()
         else {
             return Err(ParseGameStateError);
         };
 
-        {
-            // Decode the wall using run-length counts for empty positions.
-            let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
-            let mut y = 0;
+        // Decode the wall using run-length counts for empty positions.
+        let placed_rows: Vec<_> = placed_parts.split('/').collect();
+        if placed_rows.len() != BOARD_DIMENSION {
+            return Err(ParseGameStateError);
+        }
+        let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+        for (y, placed_row) in placed_rows.iter().enumerate() {
             let mut x = 0;
-            for p in placed_parts.chars() {
-                if let Ok(step) = p.to_string().parse::<usize>() {
-                    x += step;
-                } else if p == '-' {
-                    placed[y][x] = Some(Board::get_tile_type_at_pos(y, x));
-                    x += 1;
-                }
-                if x >= BOARD_DIMENSION {
-                    y += 1;
-                    x = 0;
-                }
-            }
-            builder = builder.placed(placed);
-
-            // Decode each pattern line as a tile type and tile count.
-            let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
-            for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
-                let tile_type = h[0]
-                    .to_string()
-                    .parse::<Tile>()
-                    .or(Err(ParseGameStateError))?;
-                let tile_count = h[1]
-                    .to_string()
-                    .parse::<Tile>()
-                    .or(Err(ParseGameStateError))?;
-                if tile_count == 0 {
-                    continue;
-                }
-                for hold in holds[i].iter_mut().take(tile_count) {
-                    *hold = Some(tile_type);
+            for character in placed_row.chars() {
+                match character {
+                    '-' => {
+                        if x >= BOARD_DIMENSION {
+                            return Err(ParseGameStateError);
+                        }
+                        placed[y][x] = Some(Board::get_tile_type_at_pos(y, x));
+                        x += 1;
+                    }
+                    character if character.is_ascii_digit() => {
+                        let step = character.to_digit(10).unwrap() as usize;
+                        if step == 0 || x + step > BOARD_DIMENSION {
+                            return Err(ParseGameStateError);
+                        }
+                        x += step;
+                    }
+                    _ => return Err(ParseGameStateError),
                 }
             }
-            builder = builder.holds(holds);
-
-            // Decode collected row, column, and tile-type bonuses.
-            builder = builder.bonuses(BonusTypes {
-                rows: bonus_rows
-                    .chars()
-                    .map(|c| c == '1')
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .or(Err(ParseGameStateError))?,
-                columns: bonus_cols
-                    .chars()
-                    .map(|c| c == '1')
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .or(Err(ParseGameStateError))?,
-                tile_types: bonus_tile_types
-                    .chars()
-                    .map(|c| c == '1')
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .or(Err(ParseGameStateError))?,
-            });
-
-            // Decode the score, occupied penalty spaces, and physical penalty tiles.
-            builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
-            builder = builder.penalties(penalties.parse().or(Err(ParseGameStateError))?);
-            if let Some(penalty_tiles) = penalty_tiles {
-                builder =
-                    builder.penalty_tiles(penalty_tiles.parse().or(Err(ParseGameStateError))?);
+            if x != BOARD_DIMENSION {
+                return Err(ParseGameStateError);
             }
         }
-        Ok(builder.build())
+
+        // Decode each pattern line as a tile-type/count pair.
+        if held.len() != BOARD_DIMENSION * 2 || !held.is_ascii() {
+            return Err(ParseGameStateError);
+        }
+        let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+        for row_idx in 0..BOARD_DIMENSION {
+            let tile_type = held.as_bytes()[row_idx * 2];
+            let tile_count = held.as_bytes()[row_idx * 2 + 1];
+            if !(b'0'..=b'4').contains(&tile_type) || !(b'0'..=b'5').contains(&tile_count) {
+                return Err(ParseGameStateError);
+            }
+            let tile_type = (tile_type - b'0') as Tile;
+            let tile_count = (tile_count - b'0') as usize;
+            if tile_count > row_idx + 1 || (tile_count == 0 && tile_type != 0) {
+                return Err(ParseGameStateError);
+            }
+            for hold in holds[row_idx].iter_mut().take(tile_count) {
+                *hold = Some(tile_type);
+            }
+        }
+
+        // Decode collected row, column, and tile-type bonuses.
+        let bonuses = BonusTypes {
+            rows: parse_bonus_field(bonus_rows)?,
+            columns: parse_bonus_field(bonus_cols)?,
+            tile_types: parse_bonus_field(bonus_tile_types)?,
+        };
+
+        // Decode the score, occupied penalty spaces, and physical penalty tiles.
+        let score = parse_decimal(score)?;
+        let penalties = parse_decimal(penalties)?;
+        let penalty_tiles = parse_decimal(penalty_tiles)?;
+        if penalty_tiles > penalties {
+            return Err(ParseGameStateError);
+        }
+
+        Ok(Board::builder()
+            .placed(placed)
+            .holds(holds)
+            .bonuses(bonuses)
+            .score(score)
+            .penalties(penalties)
+            .penalty_tiles(penalty_tiles)
+            .build())
     }
+}
+
+/// Parses a non-negative decimal AzulFEN field.
+fn parse_decimal(field: &str) -> Result<usize, ParseGameStateError> {
+    if field.is_empty() || !field.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ParseGameStateError);
+    }
+    field.parse().map_err(|_| ParseGameStateError)
+}
+
+/// Parses one canonical five-bit bonus field.
+fn parse_bonus_field(field: &str) -> Result<[bool; BOARD_DIMENSION], ParseGameStateError> {
+    if field.len() != BOARD_DIMENSION || !field.bytes().all(|byte| matches!(byte, b'0' | b'1')) {
+        return Err(ParseGameStateError);
+    }
+    field
+        .bytes()
+        .map(|byte| byte == b'1')
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| ParseGameStateError)
 }
 
 impl FromAzulFEN for GameState {
@@ -152,71 +188,64 @@ impl FromAzulFEN for GameState {
     /// Will error if the given AzulFEN is invalid.
     /// See the [AzulFEN format specification](../azulfen.md).
     fn from_azul_fen(azul_fen: &str) -> Result<Self, ParseGameStateError> {
-        let mut sections = azul_fen.split("| ");
+        let line = azul_fen.strip_suffix('\n').ok_or(ParseGameStateError)?;
+        if line.contains('\n') || line.contains('\r') {
+            return Err(ParseGameStateError);
+        }
+        let body = line
+            .strip_prefix(AZULFEN_VERSION)
+            .and_then(|body| body.strip_prefix(' '))
+            .ok_or(ParseGameStateError)?;
+        let sections: Vec<_> = body.split(" | ").collect();
+        if sections.len() != 4
+            || sections[0].is_empty()
+            || sections[1].is_empty()
+            || sections[3].is_empty()
+        {
+            return Err(ParseGameStateError);
+        }
 
-        let board_fens = sections.next().ok_or(ParseGameStateError)?.trim();
-        let mut board_fens: Vec<_> = board_fens.split(";").map(|f| f.trim()).collect();
-        // AzulFEN terminates every board component with ';', leaving an empty final component.
-        board_fens.pop();
-        let board_fens = board_fens;
+        let board_section = sections[0].strip_suffix(" ;").ok_or(ParseGameStateError)?;
+        let board_fens: Vec<_> = board_section.split(" ; ").collect();
+        if board_fens.iter().any(|fen| fen.is_empty()) {
+            return Err(ParseGameStateError);
+        }
         let boards = board_fens
             .into_iter()
             .map(Board::from_azul_fen)
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
 
-        let bowl_fens = sections.next().ok_or(ParseGameStateError)?;
+        let bowl_fens: Vec<_> = sections[1].split(' ').collect();
+        if bowl_fens.iter().any(|fen| fen.is_empty()) {
+            return Err(ParseGameStateError);
+        }
         let bowls = bowl_fens
-            .trim()
-            .split_ascii_whitespace()
+            .into_iter()
             .map(Bowl::from_azul_fen)
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
 
-        let bag_fen = sections.next().ok_or(ParseGameStateError)?.trim();
-        let items = bag_fen
-            .chars()
-            .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
-            .collect::<Result<Vec<_>, ParseGameStateError>>()?;
+        let bag_fen = sections[2];
+        if !bag_fen.is_ascii() || !bag_fen.bytes().all(|byte| (b'0'..=b'4').contains(&byte)) {
+            return Err(ParseGameStateError);
+        }
+        let items = bag_fen.bytes().map(|byte| (byte - b'0') as Tile).collect();
         let bag = Bag::from_items(items);
 
-        let metadata = sections.next().ok_or(ParseGameStateError)?;
-        let metadata = metadata.split_whitespace().collect::<Vec<_>>();
-        let (active_player, first_token_owner) = match metadata.as_slice() {
-            [active_player, first_token_owner, ..] => (
-                active_player
-                    .parse::<usize>()
-                    .or(Err(ParseGameStateError))?,
-                first_token_owner.parse::<usize>().map(Some).unwrap_or(None),
-            ),
-            _ => return Err(ParseGameStateError),
-        };
-        let mut seed = None;
-        let mut rng_state = None;
-        let mut discarded_tiles = None;
-        match metadata.as_slice() {
-            [_, _] => {}
-            [_, _, state] if state.starts_with(RNG_STATE_PREFIX) => {
-                rng_state = Some(decode_rng_state(state)?);
-            }
-            [_, _, seed_token] => {
-                if *seed_token != "-" {
-                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
-                }
-            }
-            [_, _, seed_token, state] => {
-                if *seed_token != "-" {
-                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
-                }
-                rng_state = Some(decode_rng_state(state)?);
-            }
-            [_, _, seed_token, state, discarded] => {
-                if *seed_token != "-" {
-                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
-                }
-                rng_state = Some(decode_rng_state(state)?);
-                discarded_tiles = Some(discarded.parse().or(Err(ParseGameStateError))?);
-            }
-            _ => return Err(ParseGameStateError),
+        let metadata: Vec<_> = sections[3].split(' ').collect();
+        if metadata.len() != 5 || metadata.iter().any(|field| field.is_empty()) {
+            return Err(ParseGameStateError);
         }
+        let active_player = parse_decimal(metadata[0])?;
+        let first_token_owner = match metadata[1] {
+            "-" => None,
+            owner => Some(parse_decimal(owner)?),
+        };
+        let seed = match metadata[2] {
+            "-" => None,
+            seed => Some(parse_decimal(seed)? as u64),
+        };
+        let rng_state = decode_rng_state(metadata[3])?;
+        let discarded_tiles = parse_decimal(metadata[4])?;
         let mut builder = GameState::builder()
             .active_player(active_player)
             .boards(boards)
@@ -226,12 +255,9 @@ impl FromAzulFEN for GameState {
         if let Some(seed) = seed {
             builder = builder.set_seed(seed);
         }
-        if let Some(rng_state) = rng_state {
-            builder = builder.set_rng_state(rng_state);
-        }
-        if let Some(discarded_tiles) = discarded_tiles {
-            builder = builder.discarded_tiles(discarded_tiles);
-        }
+        builder = builder
+            .set_rng_state(rng_state)
+            .discarded_tiles(discarded_tiles);
         builder.build().map_err(|_| ParseGameStateError)
     }
 }
@@ -244,7 +270,8 @@ impl ToAzulFEN for GameState {
     /// See the [AzulFEN format specification](../azulfen.md).
     fn to_azul_fen(&self) -> String {
         // Serialize board components.
-        let mut azul_fen = String::new();
+        let mut azul_fen = String::from(AZULFEN_VERSION);
+        azul_fen.push(' ');
         for board in self.boards().iter() {
             azul_fen.push_str(&board.fmt_uci_like());
             azul_fen.push(' ');
@@ -297,7 +324,7 @@ fn decode_rng_state(token: &str) -> Result<Vec<u8>, ParseGameStateError> {
     let encoded = token
         .strip_prefix(RNG_STATE_PREFIX)
         .ok_or(ParseGameStateError)?;
-    if encoded.len() != 64 {
+    if encoded.len() != 64 || !encoded.is_ascii() {
         return Err(ParseGameStateError);
     }
     (0..encoded.len())
@@ -310,7 +337,7 @@ fn decode_rng_state(token: &str) -> Result<Vec<u8>, ParseGameStateError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FromAzulFEN, ToAzulFEN};
+    use super::{AZULFEN_VERSION, FromAzulFEN, ToAzulFEN};
     use azul_movegen::{Bag, Board, Bowl, GameState, Row};
 
     #[test]
@@ -320,6 +347,8 @@ mod tests {
             let mut original = GameState::new(players, seed).unwrap();
             original.setup_next_round();
             let fen = original.to_azul_fen();
+            assert!(fen.starts_with("azulfen:v1 "));
+            assert!(fen.ends_with('\n'));
             assert!(fen.contains(&format!("| 0 - {seed} xoshiro256plusplus:")));
             let parsed = GameState::from_azul_fen(&fen).unwrap();
 
@@ -332,17 +361,75 @@ mod tests {
     }
 
     #[test]
-    fn azulfen_seed_is_optional_for_backward_compatibility() {
-        let original = GameState::new(2, 1234).unwrap();
+    fn unseeded_snapshots_round_trip_with_exact_rng_state() {
+        let original = GameState::builder()
+            .boards(vec![Board::default(); 2])
+            .bowls(vec![Bowl::default(); 6])
+            .bag(Bag::default())
+            .build()
+            .unwrap();
         let fen = original.to_azul_fen();
-        let without_seed = format!(
-            "{} | 0 -\n",
-            fen.trim_end().split(" | 0 - ").next().unwrap()
-        );
-
-        let parsed = GameState::from_azul_fen(&without_seed).unwrap();
+        let parsed = GameState::from_azul_fen(&fen).unwrap();
 
         assert_eq!(*parsed.seed(), None);
+        assert_eq!(parsed.rng_state(), original.rng_state());
+        assert_eq!(parsed.to_azul_fen(), fen);
+    }
+
+    #[test]
+    fn azulfen_requires_version_and_complete_metadata() {
+        let original = GameState::new(2, 1234).unwrap();
+        let fen = original.to_azul_fen();
+        let unversioned = fen.strip_prefix(&format!("{AZULFEN_VERSION} ")).unwrap();
+        let unknown_version = fen.replacen(AZULFEN_VERSION, "azulfen:v2", 1);
+        let missing_newline = fen.trim_end();
+
+        assert!(GameState::from_azul_fen(unversioned).is_err());
+        assert!(GameState::from_azul_fen(&unknown_version).is_err());
+        assert!(GameState::from_azul_fen(missing_newline).is_err());
+    }
+
+    #[test]
+    fn azulfen_rejects_malformed_board_and_metadata_fields() {
+        let mut original = GameState::new(2, 1234).unwrap();
+        original.setup_next_round();
+        let fen = original.to_azul_fen();
+
+        let malformed_wall = fen.replacen("5/5/5/5/5", "5/5/5/5/6", 1);
+        let malformed_holds = fen.replacen("0000000000", "0090000000", 1);
+        let malformed_bonus = fen.replacen("00000", "0000x", 1);
+        let malformed_metadata = fen.replacen("\n", " extra\n", 1);
+
+        for malformed in [
+            malformed_wall,
+            malformed_holds,
+            malformed_bonus,
+            malformed_metadata,
+        ] {
+            assert!(
+                GameState::from_azul_fen(&malformed).is_err(),
+                "accepted malformed FEN: {malformed}"
+            );
+        }
+    }
+
+    #[test]
+    fn component_parsers_reject_noncanonical_values() {
+        for bowl in ["", "-0", "210", "5", "0x"] {
+            assert!(Bowl::from_azul_fen(bowl).is_err(), "accepted bowl {bowl}");
+        }
+
+        for board in [
+            "5/5/5/5/6 0000000000 00000 00000 00000 0 0 0",
+            "5/5/5/5/5 0090000000 00000 00000 00000 0 0 0",
+            "5/5/5/5/5 0000000000 0000x 00000 00000 0 0 0",
+            "5/5/5/5/5 0000000000 00000 00000 00000 0 0 1",
+        ] {
+            assert!(
+                Board::from_azul_fen(board).is_err(),
+                "accepted board {board}"
+            );
+        }
     }
 
     #[test]
