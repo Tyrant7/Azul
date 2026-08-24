@@ -5,6 +5,41 @@ use crate::{
     bowl::Bowl,
     game_move::{IllegalMoveError, Move},
 };
+use rand::{RngCore, SeedableRng};
+use rand_xoshiro::rand_core::{SeedableRng as XoshiroSeedableRng, TryRng as XoshiroTryRng};
+
+/// Adapts xoshiro256++ to the workspace's rand 0.9 traits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Xoshiro256PlusPlus(rand_xoshiro::Xoshiro256PlusPlus);
+
+impl Xoshiro256PlusPlus {
+    /// Creates a xoshiro256++ generator from a 64-bit seed.
+    pub fn from_seed_u64(seed: u64) -> Self {
+        Self(<rand_xoshiro::Xoshiro256PlusPlus as XoshiroSeedableRng>::seed_from_u64(seed))
+    }
+}
+
+impl RngCore for Xoshiro256PlusPlus {
+    fn next_u32(&mut self) -> u32 {
+        XoshiroTryRng::try_next_u32(&mut self.0).unwrap()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        XoshiroTryRng::try_next_u64(&mut self.0).unwrap()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        XoshiroTryRng::try_fill_bytes(&mut self.0, dest).unwrap()
+    }
+}
+
+impl SeedableRng for Xoshiro256PlusPlus {
+    type Seed = [u8; 32];
+
+    fn from_seed(seed: Self::Seed) -> Self {
+        Self(<rand_xoshiro::Xoshiro256PlusPlus as XoshiroSeedableRng>::from_seed(seed))
+    }
+}
 
 /// The number of tiles of each type in a complete game set.
 const TILES_PER_TYPE: usize = 20;
@@ -17,7 +52,6 @@ const CENTRE_BOWL_IDX: usize = 0;
 
 mod builder;
 pub use builder::GameStateBuilder;
-use rand::{SeedableRng, rngs::SmallRng};
 
 /// Describes why a game state could not be constructed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,12 +64,17 @@ pub enum GameStateError {
     InvalidFirstTokenOwner { player: usize },
     /// The number of bowls does not match the player count.
     InvalidBowlCount { expected: usize, actual: usize },
+    /// The serialized random-generator state could not be decoded.
+    InvalidRngState,
 }
 
 /// Complete mutable state for an Azul game.
 ///
 /// The state contains one board per player, the factory bowls and centre area,
 /// the tile bag, the active player, and the owner of the first-player token.
+/// An optional seed records the seed used to initialize the game's random
+/// stream. The current xoshiro state is available through
+/// [`GameState::rng_state`] for exact snapshot and replay support.
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
@@ -43,7 +82,8 @@ pub struct GameState {
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
-    rng: SmallRng,
+    rng: Xoshiro256PlusPlus,
+    seed: Option<u64>,
 }
 
 /// Returns the number of factory bowls plus the centre area for `players` players.
@@ -102,7 +142,7 @@ impl GameState {
         if !(2..=4).contains(&players) {
             return Err(GameStateError::InvalidPlayerCount { players });
         }
-        let mut rng = SmallRng::seed_from_u64(seed);
+        let mut rng = Xoshiro256PlusPlus::from_seed_u64(seed);
         Ok(GameState {
             active_player: 0,
             boards: vec![Board::default(); players],
@@ -110,6 +150,7 @@ impl GameState {
             bag: Bag::new(get_default_tileset(), &mut rng),
             first_token_owner: None,
             rng,
+            seed: Some(seed),
         })
     }
 
@@ -124,6 +165,15 @@ impl GameState {
         bowls: Vec<Bowl>,
         bag: Bag<Tile>,
         first_token_owner: Option<usize>,
+        seed: Option<u64>,
+    }
+
+    /// Returns the serialized current state of the random generator.
+    ///
+    /// The bytes are intended to be persisted with the game snapshot and
+    /// restored through [`GameStateBuilder::set_rng_state`].
+    pub fn rng_state(&self) -> Vec<u8> {
+        bincode::serialize(&self.rng.0).expect("xoshiro state serialization cannot fail")
     }
 
     /// Resolves the previous round and prepares the next one.

@@ -1,9 +1,9 @@
 use azul_movegen::Bag;
-use rand::{SeedableRng, rngs::SmallRng};
+use azul_movegen::Xoshiro256PlusPlus;
 
-/// Creates a reproducible small RNG for bag tests.
-fn rng(seed: u64) -> SmallRng {
-    SmallRng::seed_from_u64(seed)
+/// Creates a reproducible xoshiro RNG for bag tests.
+fn rng(seed: u64) -> Xoshiro256PlusPlus {
+    Xoshiro256PlusPlus::from_seed_u64(seed)
 }
 
 #[test]
@@ -42,4 +42,13 @@ fn default_bag_is_empty() {
     let mut bag = Bag::<usize>::default();
     assert!(bag.items().is_empty());
     assert!(bag.next().is_none());
+}
+
+#[test]
+fn from_items_preserves_draw_order() {
+    let mut bag = Bag::from_items(vec![1, 2, 3]);
+
+    assert_eq!(bag.next(), Some(3));
+    assert_eq!(bag.next(), Some(2));
+    assert_eq!(bag.next(), Some(1));
 }

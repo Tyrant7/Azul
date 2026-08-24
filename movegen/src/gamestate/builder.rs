@@ -1,6 +1,6 @@
-use rand::{SeedableRng, rngs::SmallRng};
+use rand::{Rng, rng};
 
-use super::{GameState, GameStateError, validate_components};
+use super::{GameState, GameStateError, Xoshiro256PlusPlus, validate_components};
 use crate::{Bag, Board, Bowl, Tile};
 
 /// Builder for constructing a [`GameState`] from explicit component state.
@@ -11,7 +11,8 @@ pub struct GameStateBuilder {
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
-    seed: u64,
+    seed: Option<u64>,
+    rng_state: Option<Vec<u8>>,
 }
 
 impl GameStateBuilder {
@@ -47,7 +48,13 @@ impl GameStateBuilder {
 
     /// Sets the game seed.
     pub fn set_seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
+        self.seed = Some(seed);
+        self
+    }
+
+    /// Sets the serialized current state of the random generator.
+    pub fn set_rng_state(mut self, rng_state: Vec<u8>) -> Self {
+        self.rng_state = Some(rng_state);
         self
     }
 
@@ -62,13 +69,27 @@ impl GameStateBuilder {
             &self.bowls,
             self.first_token_owner,
         )?;
+        let rng_seed = self.seed.unwrap_or_else(|| rng().random());
+        let rng = match self.rng_state {
+            Some(rng_state) => {
+                if rng_state.iter().all(|byte| *byte == 0) {
+                    return Err(GameStateError::InvalidRngState);
+                }
+                Xoshiro256PlusPlus(
+                    bincode::deserialize(&rng_state)
+                        .map_err(|_| GameStateError::InvalidRngState)?,
+                )
+            }
+            None => Xoshiro256PlusPlus::from_seed_u64(rng_seed),
+        };
         Ok(GameState {
             active_player: self.active_player,
             boards: self.boards,
             bowls: self.bowls,
             bag: self.bag,
             first_token_owner: self.first_token_owner,
-            rng: SmallRng::seed_from_u64(self.seed),
+            rng,
+            seed: self.seed,
         })
     }
 }

@@ -48,10 +48,18 @@ e.x.  03440140321203
 
 ## Active player and first player token:
 
-Finally, the active player and first player token owner and encoded at the end in order as two numbers,
-once again, prefixed with a "|" character
+Finally, the active player and first player token owner are encoded at the end in order.
+The optional numeric seed follows them, and the current xoshiro256++ state is encoded as a tagged
+hexadecimal token after the seed. This state token is emitted for every newly serialized state.
 e.x.  0 2 corresponds to the active player being player 0, and the first player token owner being player 2
 If nobody owns the first player token, then "-" will be written in its place
+e.x.  0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> records the seed and exact random state
+
+The seed identifies the game or episode seed used to initialize the random stream.
+The state token is the serialization of the random generator's current internal state and is what
+guarantees exact continuation after deserialization. Older FENs containing only the active player,
+token owner, or seed remain readable, but do not contain exact random continuation state.
+When no initial seed is available, the seed position is written as `-` before the state token.
 
 
 ## Summary
@@ -62,6 +70,6 @@ In full, a complete AzulFEN may look something like the following:
 1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;
 | 0123003 - - - 0123 0001
 | 0133041230412404142
-| 0 -
+| 0 - 12345 xoshiro256plusplus:<64 hexadecimal digits>
 
 AzulFENs should be outputted on a single-line, with a newline as the final character

@@ -1,6 +1,7 @@
 use azul_movegen::board::BOARD_DIMENSION;
-use azul_movegen::{Bag, Board, Bowl, GameState, GameStateError, Move, Row, Tile};
-use rand::SeedableRng;
+use azul_movegen::{
+    Bag, Board, Bowl, GameState, GameStateError, Move, Row, Tile, Xoshiro256PlusPlus,
+};
 
 /// Creates a vector of empty bowls with the requested length.
 fn empty_bowls(count: usize) -> Vec<Bowl> {
@@ -84,6 +85,15 @@ fn builder_rejects_empty_and_structurally_invalid_states() {
             .first_token_owner(Some(2))
             .build(),
         Err(GameStateError::InvalidFirstTokenOwner { player: 2 })
+    ));
+
+    assert!(matches!(
+        GameState::builder()
+            .boards(vec![Board::default(); 2])
+            .bowls(empty_bowls(6))
+            .set_rng_state(vec![0; 32])
+            .build(),
+        Err(GameStateError::InvalidRngState)
     ));
 }
 
@@ -227,7 +237,7 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
 
 #[test]
 fn builder_preserves_explicit_state() {
-    let mut rng = rand::rngs::SmallRng::seed_from_u64(3);
+    let mut rng = Xoshiro256PlusPlus::from_seed_u64(3);
     let bag = Bag::new(vec![1, 2, 3], &mut rng);
     let expected_bag = bag.items().clone();
     let boards = vec![Board::default(); 2];

@@ -1,10 +1,10 @@
+use crate::format::ProtocolFormat;
 use azul_movegen::{
     Bag, Board, Bowl, GameState, Tile,
     board::{BOARD_DIMENSION, BonusTypes},
 };
-use rand::{Rng, SeedableRng, rng, rngs::SmallRng};
 
-use crate::format::ProtocolFormat;
+const RNG_STATE_PREFIX: &str = "xoshiro256plusplus:";
 
 /// Attempting to parse an invalid AzulFEN or AzulFEN component will produce this error.
 #[derive(Debug)]
@@ -151,21 +151,17 @@ impl FromAzulFEN for GameState {
             .map(Bowl::from_azul_fen)
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
 
-        let bag_fen = sections.next().ok_or(ParseGameStateError)?;
+        let bag_fen = sections.next().ok_or(ParseGameStateError)?.trim();
         let items = bag_fen
             .chars()
             .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
-        let mut rng = SmallRng::from_seed(rand::rng().random());
-        let bag = Bag::new(items, &mut rng);
+        let bag = Bag::from_items(items);
 
-        let active_player_and_first_token = sections.next().ok_or(ParseGameStateError)?;
-        let (active_player, first_token_owner) = match active_player_and_first_token
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .as_slice()
-        {
-            [active_player, first_token_owner] => (
+        let metadata = sections.next().ok_or(ParseGameStateError)?;
+        let metadata = metadata.split_whitespace().collect::<Vec<_>>();
+        let (active_player, first_token_owner) = match metadata.as_slice() {
+            [active_player, first_token_owner, ..] => (
                 active_player
                     .parse::<usize>()
                     .or(Err(ParseGameStateError))?,
@@ -173,19 +169,43 @@ impl FromAzulFEN for GameState {
             ),
             _ => return Err(ParseGameStateError),
         };
-        GameState::builder()
+        let mut seed = None;
+        let mut rng_state = None;
+        match metadata.as_slice() {
+            [_, _] => {}
+            [_, _, state] if state.starts_with(RNG_STATE_PREFIX) => {
+                rng_state = Some(decode_rng_state(state)?);
+            }
+            [_, _, seed_token] => {
+                seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+            }
+            [_, _, seed_token, state] => {
+                seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                rng_state = Some(decode_rng_state(state)?);
+            }
+            _ => return Err(ParseGameStateError),
+        }
+        let mut builder = GameState::builder()
             .active_player(active_player)
             .boards(boards)
             .bowls(bowls)
             .bag(bag)
-            .first_token_owner(first_token_owner)
-            .build()
-            .map_err(|_| ParseGameStateError)
+            .first_token_owner(first_token_owner);
+        if let Some(seed) = seed {
+            builder = builder.set_seed(seed);
+        }
+        if let Some(rng_state) = rng_state {
+            builder = builder.set_rng_state(rng_state);
+        }
+        builder.build().map_err(|_| ParseGameStateError)
     }
 }
 
 impl ToAzulFEN for GameState {
     /// Returns the AzulFEN encoding for this game state.
+    ///
+    /// The metadata includes the optional game seed and current random state,
+    /// allowing exact snapshot restoration.
     /// See `interface/azulfen.md` in the repository for the format specification.
     fn to_azul_fen(&self) -> String {
         // Serialize board components.
@@ -206,7 +226,7 @@ impl ToAzulFEN for GameState {
         azul_fen.push_str("| ");
         azul_fen.push_str(&self.bag().fmt_uci_like());
 
-        // Serialize turn and first-player-token metadata.
+        // Serialize turn, token owner, optional seed, and current RNG state.
         azul_fen.push_str(" | ");
         azul_fen.push_str(&self.active_player().to_string());
         azul_fen.push(' ');
@@ -215,8 +235,94 @@ impl ToAzulFEN for GameState {
         } else {
             "-".to_string()
         });
+        azul_fen.push(' ');
+        azul_fen.push_str(
+            &self
+                .seed()
+                .map_or_else(|| "-".to_string(), |seed| seed.to_string()),
+        );
+        azul_fen.push(' ');
+        azul_fen.push_str(RNG_STATE_PREFIX);
+        azul_fen.push_str(&encode_rng_state(&self.rng_state()));
 
         azul_fen.push('\n');
         azul_fen
+    }
+}
+
+/// Encodes serialized RNG bytes as a compact hexadecimal AzulFEN token.
+fn encode_rng_state(state: &[u8]) -> String {
+    state.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Decodes a tagged hexadecimal RNG state token.
+fn decode_rng_state(token: &str) -> Result<Vec<u8>, ParseGameStateError> {
+    let encoded = token
+        .strip_prefix(RNG_STATE_PREFIX)
+        .ok_or(ParseGameStateError)?;
+    if encoded.len() != 64 {
+        return Err(ParseGameStateError);
+    }
+    (0..encoded.len())
+        .step_by(2)
+        .map(|index| {
+            u8::from_str_radix(&encoded[index..index + 2], 16).or(Err(ParseGameStateError))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FromAzulFEN, ToAzulFEN};
+    use azul_movegen::GameState;
+
+    #[test]
+    fn seeded_azulfen_round_trips_two_through_four_players() {
+        for players in 2..=4 {
+            let seed = players as u64 * 100;
+            let mut original = GameState::new(players, seed).unwrap();
+            original.setup_next_round();
+            let fen = original.to_azul_fen();
+            assert!(fen.contains(&format!("| 0 - {seed} xoshiro256plusplus:")));
+            let parsed = GameState::from_azul_fen(&fen).unwrap();
+
+            assert_eq!(parsed.boards().len(), players);
+            assert_eq!(parsed.bowls().len(), players * 2 + 2);
+            assert_eq!(*parsed.seed(), Some(seed));
+            assert_eq!(parsed.rng_state(), original.rng_state());
+            assert_eq!(parsed.to_azul_fen(), fen);
+        }
+    }
+
+    #[test]
+    fn azulfen_seed_is_optional_for_backward_compatibility() {
+        let original = GameState::new(2, 1234).unwrap();
+        let fen = original.to_azul_fen();
+        let without_seed = format!(
+            "{} | 0 -\n",
+            fen.trim_end().split(" | 0 - ").next().unwrap()
+        );
+
+        let parsed = GameState::from_azul_fen(&without_seed).unwrap();
+
+        assert_eq!(*parsed.seed(), None);
+    }
+
+    #[test]
+    fn azulfen_round_trip_reproduces_future_randomness() {
+        let mut original = GameState::new(2, 777).unwrap();
+        original.setup_next_round();
+        let fen = original.to_azul_fen();
+        let mut parsed = GameState::from_azul_fen(&fen).unwrap();
+
+        original.setup_next_round();
+        parsed.setup_next_round();
+
+        assert_eq!(parsed.bag().items(), original.bag().items());
+        for (parsed_bowl, original_bowl) in parsed.bowls().iter().zip(original.bowls()) {
+            assert_eq!(parsed_bowl.tiles(), original_bowl.tiles());
+        }
+        assert_eq!(parsed.rng_state(), original.rng_state());
+        assert_eq!(parsed.to_azul_fen(), original.to_azul_fen());
     }
 }
