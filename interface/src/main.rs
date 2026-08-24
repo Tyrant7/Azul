@@ -17,6 +17,8 @@ pub mod format;
 pub mod parsing;
 pub mod protocol;
 
+mod process;
+
 use std::{io, process::Command};
 
 use azul_movegen::GameState;
