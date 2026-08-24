@@ -1,8 +1,6 @@
 # TODO
 
 ## Movegen
-- Crate level docs
-- Clean up a bit of the file organization -> move some data types into their own files
 - Implement full tests for movegen sections
 - Finish README file
 - Validate supported player counts and reject invalid or empty game states safely

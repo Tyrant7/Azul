@@ -1,0 +1,55 @@
+use super::GameState;
+use crate::{Bag, Board, Bowl, Tile};
+
+/// Builder for constructing a [`GameState`] from explicit component state.
+#[derive(Default)]
+pub struct GameStateBuilder {
+    active_player: usize,
+    boards: Vec<Board>,
+    bowls: Vec<Bowl>,
+    bag: Bag<Tile>,
+    first_token_owner: Option<usize>,
+}
+
+impl GameStateBuilder {
+    /// Sets the index of the active player.
+    pub fn active_player(mut self, active_player: usize) -> Self {
+        self.active_player = active_player;
+        self
+    }
+
+    /// Sets the player boards.
+    pub fn boards(mut self, boards: Vec<Board>) -> Self {
+        self.boards = boards;
+        self
+    }
+
+    /// Sets the factory bowls, including the centre at index zero.
+    pub fn bowls(mut self, bowls: Vec<Bowl>) -> Self {
+        self.bowls = bowls;
+        self
+    }
+
+    /// Sets the tile bag.
+    pub fn bag(mut self, bag: Bag<Tile>) -> Self {
+        self.bag = bag;
+        self
+    }
+
+    /// Sets the player holding the first-player token, if any.
+    pub fn first_token_owner(mut self, first_token_owner: Option<usize>) -> Self {
+        self.first_token_owner = first_token_owner;
+        self
+    }
+
+    /// Builds a game state from the configured fields.
+    pub fn build(self) -> GameState {
+        GameState {
+            active_player: self.active_player,
+            boards: self.boards,
+            bowls: self.bowls,
+            bag: self.bag,
+            first_token_owner: self.first_token_owner,
+        }
+    }
+}
