@@ -1,7 +1,6 @@
 # TODO
 
 ## Interface
-- Tests
 - Complete child-process stdin/stdout/stderr wiring and lifecycle management
 - Implement UAI command dispatch, handshakes, position updates, move requests, quit, and errors
 - Implement time controls, deadlines, engine recovery, logging, and resource limits

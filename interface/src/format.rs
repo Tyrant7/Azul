@@ -179,3 +179,56 @@ where
         self.items().iter().map(|t| t.to_string()).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ProtocolFormat;
+    use crate::parsing::{FromAzulFEN, ToAzulFEN};
+    use crate::protocol::Protocol;
+    use azul_movegen::{Bag, Board, Bowl, GameState};
+
+    #[test]
+    fn bowl_and_bag_formatters_use_expected_machine_values() {
+        let bowl = Bowl::from_tiles(vec![2, 0, 2]);
+        assert_eq!(bowl.fmt_human(), "022");
+        assert_eq!(bowl.fmt_uci_like(), "022");
+        assert_eq!(bowl.fmt_protocol(Protocol::Human), "022");
+        assert_eq!(bowl.fmt_protocol(Protocol::UAI), "022");
+
+        let bag = Bag::from_items(vec![1, 2, 3]);
+        assert_eq!(bag.fmt_human(), "");
+        assert_eq!(bag.fmt_uci_like(), "123");
+    }
+
+    #[test]
+    fn board_machine_format_round_trips() {
+        let board = Board::builder()
+            .score(12)
+            .penalties(3)
+            .penalty_tiles(2)
+            .build();
+        let encoded = board.fmt_uci_like();
+        let component = encoded.trim_end_matches(" ;");
+        let parsed = Board::from_azul_fen(component).unwrap();
+
+        assert_eq!(parsed.score(), board.score());
+        assert_eq!(parsed.penalties(), board.penalties());
+        assert_eq!(parsed.penalty_tiles(), board.penalty_tiles());
+        assert!(board.fmt_human().contains("score: 12"));
+        assert!(board.fmt_human().contains("penalties: 3"));
+    }
+
+    #[test]
+    fn game_state_protocol_format_matches_azulfen() {
+        let mut game = GameState::new(2, 42).unwrap();
+        game.setup_next_round();
+
+        assert_eq!(game.fmt_uci_like(), game.to_azul_fen());
+        assert_eq!(game.fmt_protocol(Protocol::UAI), game.to_azul_fen());
+
+        let human = game.fmt_protocol(Protocol::Human);
+        assert!(human.contains("player 0 (active)"));
+        assert!(human.contains("player 1"));
+        assert!(human.contains("0: "));
+    }
+}

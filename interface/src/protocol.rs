@@ -224,8 +224,12 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
             "dir" => config.dir = Some(val.to_string()),
             "args" => config.args = Some(val.to_string()),
             "name" => config.name = Some(val.to_string()),
-            "limit_mem" => config.limit_mem = val.parse().ok(),
-            "limit_threads" => config.limit_threads = val.parse().ok(),
+            "limit_mem" => {
+                config.limit_mem = Some(val.parse().map_err(|_| "Invalid memory limit")?)
+            }
+            "limit_threads" => {
+                config.limit_threads = Some(val.parse().map_err(|_| "Invalid thread limit")?)
+            }
             _ => return Err(format!("Unknown engine key: {}", key)),
         };
     }
@@ -263,7 +267,7 @@ For example, 040102 selects tile type 1 from bowl index 4 and sends it to wall r
 /// This function parses the move's shape and numeric fields only; legality is
 /// checked later by [`azul_movegen::GameState::make_move`].
 pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
-    if input.len() != 6 {
+    if input.len() != 6 || !input.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(ParseMoveError);
     }
     let (bowl, other) = input.split_at(2);
@@ -282,4 +286,113 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
         tile_type,
         row,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Protocol, TimeControl, parse_engine, parse_move};
+    use azul_movegen::{Row, game_move::Move};
+    use clap::Parser;
+
+    #[test]
+    fn parse_engine_accepts_all_descriptor_fields() {
+        let config = parse_engine(
+            "path=engine proto=HuMaN tc=60+5 dir=work args=--seed name=Test limit_mem=1024 limit_threads=4",
+        )
+        .unwrap();
+
+        assert_eq!(config.path, "engine");
+        assert!(matches!(config.proto, Protocol::Human));
+        assert!(matches!(config.tc, Some(TimeControl::Increment(60, 5))));
+        assert_eq!(config.dir.as_deref(), Some("work"));
+        assert_eq!(config.args.as_deref(), Some("--seed"));
+        assert_eq!(config.name.as_deref(), Some("Test"));
+        assert_eq!(config.limit_mem, Some(1024));
+        assert_eq!(config.limit_threads, Some(4));
+    }
+
+    #[test]
+    fn parse_engine_accepts_fixed_and_zero_increment_time_controls() {
+        let incremental = parse_engine("path=engine tc=60").unwrap();
+        assert!(matches!(
+            incremental.tc,
+            Some(TimeControl::Increment(60, 0))
+        ));
+
+        let fixed = parse_engine("path=engine st=500").unwrap();
+        assert!(matches!(fixed.tc, Some(TimeControl::Fixed(500))));
+    }
+
+    #[test]
+    fn parse_engine_rejects_invalid_descriptors() {
+        for descriptor in [
+            "tc=60",
+            "path=engine",
+            "path=engine tc=60 st=500",
+            "path=engine tc=bad",
+            "path=engine tc=60 limit_mem=bad",
+            "path=engine tc=60 limit_threads=bad",
+            "path=engine tc=60 unknown=value",
+        ] {
+            assert!(parse_engine(descriptor).is_err(), "accepted {descriptor}");
+        }
+    }
+
+    #[test]
+    fn cli_requires_two_engines_and_an_output_path() {
+        let parsed = Cli::try_parse_from([
+            "azul-interface",
+            "--engine",
+            "path=first tc=60",
+            "path=second st=500",
+            "--out",
+            "results.azl",
+            "--tournament",
+            "round-robin",
+            "--games",
+            "3",
+            "--dry-run",
+        ])
+        .unwrap();
+
+        assert_eq!(parsed.engines.len(), 2);
+        assert_eq!(parsed.out, "results.azl");
+        assert!(matches!(
+            parsed.tournament,
+            Some(super::TournamentStyle::RoundRobin)
+        ));
+        assert_eq!(parsed.games, 3);
+        assert!(parsed.dry_run);
+        assert_eq!(parsed.concurrency, 1);
+        assert_eq!(parsed.timeout, 10);
+
+        assert!(Cli::try_parse_from(["azul-interface", "--engine", "path=only tc=60"]).is_err());
+    }
+
+    #[test]
+    fn parse_move_decodes_floor_and_wall_destinations() {
+        assert_eq!(
+            parse_move("000000").unwrap(),
+            Move {
+                bowl: 0,
+                tile_type: 0,
+                row: Row::Floor,
+            }
+        );
+        assert_eq!(
+            parse_move("040102").unwrap(),
+            Move {
+                bowl: 4,
+                tile_type: 1,
+                row: Row::Wall(1),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_move_rejects_malformed_input_without_panicking() {
+        for input in ["", "00000", "0000000", "00a000", "€123"] {
+            assert!(parse_move(input).is_err(), "accepted {input:?}");
+        }
+    }
 }
