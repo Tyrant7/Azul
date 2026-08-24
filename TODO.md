@@ -2,8 +2,28 @@
 
 ## Interface
 - Complete UAI command dispatch with time controls, diagnostics, recovery, and tournament integration
+  - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
+  - Add the remaining `go` forms, including `go movetime`, and translate configured time controls into protocol commands.
+  - Preserve strict response handling: consume `info` updates, accept exactly one `bestmove`, and surface `error` responses with the active command.
+  - Reject protocol responses that arrive out of phase, including duplicate terminal responses, unexpected EOF, and moves from the wrong player.
+  - Add end-to-end tests using a deterministic fake UAI engine for normal play, malformed output, illegal moves, timeouts, and graceful `quit`.
+
 - Implement time controls, deadlines, engine recovery, logging, and resource limits
+  - Represent remaining time and increment per player, with monotonic deadlines that are not affected by wall-clock changes.
+  - Enforce search deadlines, classify timeout versus crash versus protocol errors, and assign a documented game result for each failure.
+  - Decide whether a timed-out engine is stopped and reused or terminated and restarted; test both the normal and failure paths.
+  - Add structured command/response logging with engine identity, player, game, turn, timestamps, and redaction rules for sensitive paths or arguments.
+  - Wire `--debug`, `--log`, `--stderr`, and `--quiet` to the same diagnostics pipeline without contaminating protocol stdout.
+  - Apply `limit_mem` and `limit_threads` where supported, report unsupported limits clearly, and test configuration validation before process launch.
+
 - Implement tournament scheduling, concurrency, resumable results, openings, and summaries
+  - Convert engine configurations into deterministic pairings for gauntlet, round-robin, Swiss, and random styles.
+  - Honor `--games`, `--rounds`, `--repeat`, `--max-games`, `--swap`, and the tournament seed in pairing and side assignment.
+  - Run independent games concurrently while isolating processes, RNG seeds, logs, and result records per game.
+  - Define a versioned results format containing participants, configuration, seed, outcome, scores, termination reason, and elapsed time.
+  - Make `--out` atomic and make `--resume` validate configuration compatibility before continuing unfinished work.
+  - Load and validate opening positions, then include the opening snapshot in reproducibility metadata.
+  - Produce summaries for wins, draws, scores, failures, timeouts, game length, and throughput.
 
 ## Reinforcement learning system
 
