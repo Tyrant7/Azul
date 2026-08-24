@@ -1,7 +1,6 @@
 # TODO
 
 ## Movegen
-- Implement full tests for movegen sections
 - Finish README file
 - Validate supported player counts and reject invalid or empty game states safely
 - Define and test invariants for bowls, bags, board holds, placed tiles, and tile counts

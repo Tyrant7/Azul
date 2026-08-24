@@ -94,6 +94,7 @@ impl Board {
         let row_idx = match row_idx {
             Row::Floor => {
                 self.penalties += tile_count;
+                self.penalties += penalty;
                 return Ok(());
             }
             Row::Wall(idx) => idx,
