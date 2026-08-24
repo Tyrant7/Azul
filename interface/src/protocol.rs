@@ -60,73 +60,104 @@ pub struct Cli {
         value_parser = parse_engine,
         num_args = 2..,
         value_delimiter = None,
-        help = "Define engine configuration (e.g. --engine path=PATH proto=UAI tc=60+5)"
+        help = "Define two or more engine configurations as key=value descriptors"
     )]
     pub engines: Vec<EngineConfig>,
 
     // Match configuration
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, help = "Select the tournament pairing strategy")]
     pub tournament: Option<TournamentStyle>,
 
-    #[arg(long, value_name = "N", default_value_t = 1)]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        help = "Number of games to run concurrently"
+    )]
     pub concurrency: usize,
 
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", help = "Path for match results")]
     pub out: String,
 
-    #[arg(long, value_name = "PATH")]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Resume from saved tournament results"
+    )]
     pub resume: Option<String>,
 
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", help = "Number of rounds or matches")]
     pub rounds: Option<usize>,
 
-    #[arg(long, value_name = "N", default_value_t = 1)]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        help = "Number of games per match"
+    )]
     pub games: usize,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Repeat the tournament or match")]
     pub repeat: bool,
 
-    #[arg(long = "max-games", value_name = "N")]
+    #[arg(
+        long = "max-games",
+        value_name = "N",
+        help = "Maximum total number of games"
+    )]
     pub max_games: Option<usize>,
 
-    #[arg(long, value_name = "N")]
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Seed for reproducible tournament randomness"
+    )]
     pub seed: Option<u64>,
 
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", help = "Starting positions or opening book")]
     pub openings: Option<String>,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Balance starting sides between engines")]
     pub swap: bool,
 
-    #[arg(long, value_name = "N", default_value_t = 10)]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 10,
+        help = "Engine response timeout value"
+    )]
     pub timeout: usize,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Recover from an engine process failure")]
     pub recover: bool,
 
     // Diagnostics and logging
-    #[arg(long, action)]
+    #[arg(long, action, help = "Print the interface version")]
     pub version: bool,
 
-    #[arg(long = "dry-run", action)]
+    #[arg(
+        long = "dry-run",
+        action,
+        help = "Validate configuration without starting games"
+    )]
     pub dry_run: bool,
 
-    #[arg(long = "check-engines", action)]
+    #[arg(long = "check-engines", action, help = "Check engine handshakes")]
     pub check_engines: bool,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Print match summaries")]
     pub summary: bool,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Display engine input and output")]
     pub debug: bool,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Write engine communication to a log")]
     pub log: bool,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Display command-line and engine errors")]
     pub stderr: bool,
 
-    #[arg(long, action)]
+    #[arg(long, action, help = "Suppress normal output")]
     pub quiet: bool,
 }
 
@@ -167,7 +198,7 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
                     let increment = inc.parse::<u32>().map_err(|_| "Invalid increment")?;
                     config.tc = Some(TimeControl::Increment(base, increment));
                 } else {
-                    let base = s.parse::<u32>().map_err(|_| "Invalid time format")?;
+                    let base = val.parse::<u32>().map_err(|_| "Invalid time format")?;
                     config.tc = Some(TimeControl::Increment(base, 0));
                 }
             }

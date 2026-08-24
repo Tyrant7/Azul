@@ -1,53 +1,89 @@
 # Azul Interface
 
-The Azul Interface has been created to facilitate running games between various 
-Azul playing programs using the UAI (Universal Azul Interface) protocol. 
+The interface is the command-line harness for running Azul games between
+engines and human players. It accepts engine and match configuration and is
+designed around the [UAI protocol](protocol.md).
 
-See the [UAI protocol specification](protocol.md) for more information on UAI.
+The current executable is still a development harness. It parses the options,
+starts configured child processes, and runs a local human-input game. Match
+scheduling, engine I/O, time controls, persistence, diagnostics, and recovery
+options are parsed but are not all wired into execution yet.
 
-## Instructions for Use
+## Quick start
 
-The Azul Interface supports variety of command line arguments, as listed below. 
+The `--engine` option requires at least two engine descriptors. Each descriptor
+is a quoted, whitespace-separated list of `key=value` fields:
 
-Engine Config
+```text
+cargo run -p interface -- \
+  --engine "path=./target/debug/random_engine proto=uai tc=60+5" \
+           "path=./target/debug/random_engine proto=uai tc=60+5" \
+  --tournament round-robin \
+  --games 10 \
+  --out ./results.azl
+```
 
--engine path=[path to executable]: path the the engine executable
--engine dir=[working directory]: path for engines to read/write to
--engine args=["any string"]: any command line arguments to pass to the engine
--engine name=[engine name]: display name of this engine
--engine proto=[uai or human]: protocol type to use for this engine
--engine limit-mem=N: optional per-engine memory cap
--engine limit-threads=N: optional per-engine thread restriction
+The descriptor parser currently splits on whitespace and does not provide an
+escaping or nested-quoting syntax. Quote the complete descriptor for the
+shell, and keep each field's value free of spaces.
 
-Timing Settings
+## Engine descriptors
 
-tc: time control -> set number of seconds, or number with increment
-st: fixed milliseconds per move, cannot be used with tc
+`--engine` accepts two or more descriptors. `path` and `tc` are required for
+each descriptor; the other fields are optional.
 
-Tournament/Match Settings
+| Field | Value | Default | Description |
+| --- | --- | --- | --- |
+| `path` | executable path | none | Program to start for this engine. |
+| `proto` | `uai` or `human` | `uai` | Protocol/interaction mode. |
+| `tc` | `SECONDS` or `SECONDS+INCREMENT` | none | Incremental time control in seconds. It cannot be combined with `st`. |
+| `st` | integer | none | Fixed time-per-move value, interpreted as milliseconds. It cannot be combined with `tc`. |
+| `dir` | path | none | Working directory for the engine process. |
+| `args` | one whitespace-free string | none | Additional argument text passed to the engine. |
+| `name` | text | none | Display name for the engine. |
+| `limit_mem` | unsigned integer | none | Per-engine memory limit value reserved for resource enforcement. |
+| `limit_threads` | unsigned integer | none | Per-engine thread limit value reserved for resource enforcement. |
 
--tournament [gauntlet | round-robin | swiss | random]: tournament style
--concurrency N: sets number of concurrent games
--out file.azl: Saves the game results to the specified file
--resume file.azl: resume a stopped tournament from results/log
--rounds N: Sets number of matches in the tournamemt
--games N: sets the number of games per match
--repeat: Repeats the tournament or match indefinitely
--max-games N: hard cap on total games even if `-repeat` enable
--seed N: RNG seed for reproducibility
--openings file.azl: load a set of starting positions/opening book for fair testing
--swap: ensure each engine plays both "first" and "second" positions equally
+Example:
 
--timeout N: max milliseconds to wait for an engine to reply to the start command before forfeitting the match
--recover: restarts an engine if it crashes mid-match rather than forfeiting
+```text
+--engine "path=engine-a proto=uai tc=60+2 dir=./runs name=Alpha" \
+         "path=engine-b proto=uai st=500 name=Beta"
+```
 
-Debugging and logging
+Unknown fields, missing `path`/time control, invalid numeric values, and using
+both `tc` and `st` reject the command line.
 
--version: prints interface version
--dry-run: parse config, validate engines exist, but don't start games
--check-engines: runs each engine with a handshake to confirm it's alive
--summary: prints human-readible results after each round/match
--debug: displays all engine input and output
--log: writes all engine communication to a log file
--stderr: shows error messages from the command line or engines
--quiet: surpress program output (only errors and final results are printed)
+## Match and tournament options
+
+| Option | Value/default | Description |
+| --- | --- | --- |
+| `--tournament` | `gauntlet`, `round-robin`, `swiss`, or `random` | Selects the pairing strategy. |
+| `--concurrency` | `N`, default `1` | Number of games intended to run concurrently. |
+| `--out` | `PATH`, required | Output path for match results. |
+| `--resume` | `PATH` | Resume a tournament from a saved results file. |
+| `--rounds` | `N` | Number of rounds or matches to schedule. |
+| `--games` | `N`, default `1` | Games per match. |
+| `--repeat` | flag | Repeat the tournament or match. |
+| `--max-games` | `N` | Hard cap on total games, including repeated runs. |
+| `--seed` | unsigned `N` | Seed for reproducible tournament randomness. |
+| `--openings` | `PATH` | Load starting positions or an opening book. |
+| `--swap` | flag | Balance which engine receives each starting side. |
+| `--timeout` | `N`, default `10` | Timeout value used for engine responses; the runtime unit is currently defined by the future process-management implementation. |
+| `--recover` | flag | Restart a crashed engine instead of immediately forfeiting. |
+
+## Diagnostics and logging options
+
+| Option | Description |
+| --- | --- |
+| `--version` | Print the interface version. |
+| `--dry-run` | Parse configuration and validate setup without starting games. |
+| `--check-engines` | Perform an engine handshake check. |
+| `--summary` | Print results after rounds or matches. |
+| `--debug` | Display engine input and output. |
+| `--log` | Write engine communication to a log. |
+| `--stderr` | Display command-line or engine error messages. |
+| `--quiet` | Suppress normal output, leaving errors and final results. |
+
+Clap also provides `--help`. Run `cargo run -p interface -- --help` to view
+the generated option summary directly from the executable.
