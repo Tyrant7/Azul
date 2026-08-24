@@ -57,10 +57,10 @@ fn main() {
         .map(|launch| EngineProcess::spawn_launch(launch).expect("Failed to start engine"))
         .collect::<Vec<_>>();
 
-    let diagnostics = if cli.stderr || cli.log {
+    let diagnostics = if cli.debug || cli.stderr || cli.log {
         let log_path = cli.log.then(|| diagnostics_log_path(&cli.out));
         Some(Arc::new(
-            ProcessDiagnostics::new(cli.stderr, log_path)
+            ProcessDiagnostics::new(cli.stderr, cli.debug, log_path)
                 .expect("Failed to initialize engine diagnostics"),
         ))
     } else {

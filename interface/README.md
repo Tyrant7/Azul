@@ -83,7 +83,7 @@ both `tc` and `st` reject the command line.
 | `--dry-run` | Parse configuration and validate setup without starting games. |
 | `--check-engines` | Perform an engine handshake check. |
 | `--summary` | Print results after rounds or matches. |
-| `--debug` | Display engine input and output. |
+| `--debug` | Display tagged engine commands and protocol stdout. |
 | `--log` | Write engine commands, stdout, and stderr to a sibling `.log` file next to `--out`. |
 | `--stderr` | Display engine stderr while preserving protocol stdout for the interface. |
 | `--quiet` | Suppress normal output, leaving errors and final results. |

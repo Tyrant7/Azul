@@ -921,6 +921,7 @@ mod tests {
             "3",
             "--dry-run",
             "--quiet",
+            "--debug",
         ])
         .unwrap();
 
@@ -933,6 +934,7 @@ mod tests {
         assert_eq!(parsed.games, 3);
         assert!(parsed.dry_run);
         assert!(parsed.quiet);
+        assert!(parsed.debug);
         assert_eq!(parsed.concurrency, 1);
         assert_eq!(parsed.timeout, 10);
 

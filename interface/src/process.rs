@@ -29,24 +29,35 @@ pub(crate) struct EngineProcess {
 /// Shares engine stream logging and optional stderr display across processes.
 pub(crate) struct ProcessDiagnostics {
     show_stderr: bool,
+    show_protocol: bool,
     log: Option<Mutex<BufWriter<File>>>,
 }
 
 impl ProcessDiagnostics {
     /// Creates a diagnostics sink, truncating an existing log file.
-    pub(crate) fn new(show_stderr: bool, log_path: Option<PathBuf>) -> io::Result<Self> {
+    pub(crate) fn new(
+        show_stderr: bool,
+        show_protocol: bool,
+        log_path: Option<PathBuf>,
+    ) -> io::Result<Self> {
         let log = log_path
             .map(File::create)
             .transpose()?
             .map(BufWriter::new)
             .map(Mutex::new);
-        Ok(Self { show_stderr, log })
+        Ok(Self {
+            show_stderr,
+            show_protocol,
+            log,
+        })
     }
 
     /// Records one command or stream line for an engine.
     fn record(&self, engine_index: usize, direction: &str, line: &str) -> io::Result<()> {
         if direction == "stderr" && self.show_stderr {
             eprintln!("[engine {engine_index} stderr] {line}");
+        } else if direction != "stderr" && self.show_protocol {
+            eprintln!("[engine {engine_index} {direction}] {line}");
         }
         if let Some(log) = &self.log {
             let mut log = log
@@ -436,7 +447,8 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let diagnostics = Arc::new(ProcessDiagnostics::new(false, Some(log_path.clone())).unwrap());
+        let diagnostics =
+            Arc::new(ProcessDiagnostics::new(false, false, Some(log_path.clone())).unwrap());
         let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
         process.configure_diagnostics(Some(diagnostics), 7);
         process.send_line("ping").unwrap();
