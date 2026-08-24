@@ -62,6 +62,7 @@ fn main() {
     listen_for_input(gamestate, Protocol::Human);
 }
 
+/// Runs the interactive human-input game loop.
 fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
     loop {
         let mut input = String::new();
@@ -95,6 +96,7 @@ fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
     println!("Winner: player {}", gamestate.get_winner());
 }
 
+/// Runs a random-playout loop for the supplied game state.
 fn random_playout(mut gamestate: GameState, protocol: Protocol) {
     loop {
         io::stdin()

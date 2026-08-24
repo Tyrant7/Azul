@@ -1,3 +1,5 @@
+//! AzulFEN serialization and deserialization for movegen values.
+
 use crate::format::ProtocolFormat;
 use azul_movegen::{
     Bag, Board, Bowl, GameState, Tile,
@@ -13,12 +15,18 @@ pub struct ParseGameStateError;
 /// Constructs a value from an [AzulFEN](../azulfen.md) string or component.
 pub trait FromAzulFEN: Sized {
     /// Parses an AzulFEN representation.
+    ///
+    /// Implementations may accept a complete position or a component when
+    /// the target type represents one part of a position.
     fn from_azul_fen(fen: &str) -> Result<Self, ParseGameStateError>;
 }
 
 /// Serializes a value to its [AzulFEN](../azulfen.md) representation.
 pub trait ToAzulFEN {
     /// Returns the AzulFEN representation.
+    ///
+    /// The returned string is suitable for persistence or use in the UAI
+    /// `position fen` command.
     fn to_azul_fen(&self) -> String;
 }
 

@@ -1,3 +1,5 @@
+//! Protocol and human-readable formatting for movegen values.
+
 use azul_movegen::{Bag, Board, Bowl, GameState, board::BOARD_DIMENSION};
 
 use crate::{parsing::ToAzulFEN, protocol::Protocol};
@@ -6,7 +8,7 @@ use crate::{parsing::ToAzulFEN, protocol::Protocol};
 pub trait ProtocolFormat {
     /// Formats the value for a human reader.
     fn fmt_human(&self) -> String;
-    /// Formats the value using the [AzulFEN representation](../azulfen.md)
+    /// Formats the value using the machine-readable AzulFEN representation
     /// used by the UAI protocol.
     fn fmt_uci_like(&self) -> String;
 

@@ -1,3 +1,5 @@
+//! Command-line configuration, protocol modes, and move parsing.
+
 use azul_movegen::{Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
 use std::num::ParseIntError;
@@ -5,13 +7,21 @@ use std::num::ParseIntError;
 /// Configuration for one engine participating in a match.
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
+    /// Path to the engine executable.
     pub path: String,
+    /// Protocol or interaction mode used by the engine.
     pub proto: Protocol,
+    /// Time control assigned to the engine.
     pub tc: Option<TimeControl>,
+    /// Working directory for the engine process.
     pub dir: Option<String>,
+    /// Additional arguments passed to the engine process.
     pub args: Option<String>,
+    /// Optional display name for the engine.
     pub name: Option<String>,
+    /// Optional per-engine memory limit value.
     pub limit_mem: Option<u64>,
+    /// Optional per-engine thread limit.
     pub limit_threads: Option<u32>,
 }
 
@@ -161,6 +171,7 @@ pub struct Cli {
     pub quiet: bool,
 }
 
+/// Parses one whitespace-separated engine descriptor.
 fn parse_engine(s: &str) -> Result<EngineConfig, String> {
     let mut config = EngineConfig {
         path: String::new(),
@@ -228,6 +239,7 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
     Ok(config)
 }
 
+/// Indicates that a six-digit move could not be parsed.
 #[derive(Debug)]
 pub struct ParseMoveError;
 
