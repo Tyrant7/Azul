@@ -1,7 +1,9 @@
 //! Child-process ownership and stream lifecycle for engine sessions.
 
 use std::{
+    ffi::OsString,
     io::{self, BufRead, BufReader, Read, Write},
+    path::PathBuf,
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread::{self, JoinHandle},
@@ -16,6 +18,35 @@ pub(crate) struct EngineProcess {
     stderr: Receiver<io::Result<String>>,
     stdout_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
+}
+
+/// Describes how to launch one engine process.
+#[derive(Debug, Clone)]
+pub(crate) struct EngineLaunch {
+    program: OsString,
+    args: Vec<OsString>,
+    current_dir: Option<PathBuf>,
+}
+
+impl EngineLaunch {
+    /// Creates a launch specification from CLI-compatible string values.
+    pub(crate) fn new(program: String, args: Vec<String>, current_dir: Option<String>) -> Self {
+        Self {
+            program: program.into(),
+            args: args.into_iter().map(OsString::from).collect(),
+            current_dir: current_dir.map(PathBuf::from),
+        }
+    }
+
+    /// Builds a command for a fresh engine process.
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        command.args(&self.args);
+        if let Some(current_dir) = &self.current_dir {
+            command.current_dir(current_dir);
+        }
+        command
+    }
 }
 
 impl EngineProcess {
@@ -48,6 +79,27 @@ impl EngineProcess {
             stdout_thread: Some(stdout_thread),
             stderr_thread: Some(stderr_thread),
         })
+    }
+
+    /// Starts an engine from a reusable launch specification.
+    pub(crate) fn spawn_launch(launch: &EngineLaunch) -> io::Result<Self> {
+        let mut command = launch.command();
+        Self::spawn(&mut command)
+    }
+
+    /// Replaces this process with a freshly spawned instance.
+    ///
+    /// The replacement is started before the old process is shut down so a
+    /// failed spawn leaves the existing process available to the caller.
+    pub(crate) fn restart(
+        &mut self,
+        launch: &EngineLaunch,
+        shutdown_timeout: Duration,
+    ) -> io::Result<()> {
+        let replacement = Self::spawn_launch(launch)?;
+        let old = std::mem::replace(self, replacement);
+        let _ = old.shutdown(shutdown_timeout);
+        Ok(())
     }
 
     /// Writes one newline-terminated protocol command to the engine.

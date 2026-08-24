@@ -1,7 +1,7 @@
 //! Command-line configuration, protocol modes, and move parsing.
 
 use crate::parsing::ToAzulFEN;
-use crate::process::EngineProcess;
+use crate::process::{EngineLaunch, EngineProcess};
 use azul_movegen::{GameState, Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
 use std::{
@@ -204,19 +204,92 @@ impl PlayerClock {
     }
 }
 
+/// Classifies a failure attributable to one engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EngineFailureKind {
+    /// The engine did not return a move before its deadline.
+    Timeout,
+    /// The engine process exited or otherwise became unusable.
+    Crash,
+    /// The engine's input or output pipe was closed unexpectedly.
+    BrokenPipe,
+    /// The engine explicitly rejected a command or position.
+    ErrorResponse,
+    /// The engine returned a response outside the protocol grammar.
+    MalformedResponse,
+    /// The engine returned a syntactically valid but illegal move.
+    IllegalMove,
+}
+
+impl EngineFailureKind {
+    /// Returns whether a bounded restart may recover this failure.
+    fn recoverable(self) -> bool {
+        matches!(self, Self::Crash | Self::BrokenPipe | Self::ErrorResponse)
+    }
+}
+
+/// Records the engine and reason responsible for a forfeited game.
+#[derive(Debug)]
+pub(crate) struct EngineForfeit {
+    /// Index of the player whose engine forfeited.
+    pub(crate) player: usize,
+    /// Classified reason for the forfeit.
+    pub(crate) reason: EngineFailureKind,
+    /// Human-readable diagnostic detail.
+    pub(crate) message: String,
+}
+
+/// Result of one UAI game, including engine forfeits.
+#[derive(Debug)]
+pub(crate) enum GameResult {
+    /// The game reached a rules-defined terminal state.
+    Completed(GameState),
+    /// An engine failed and the game ended by forfeit.
+    Forfeit {
+        /// State immediately before the failed move or command.
+        game: GameState,
+        /// Engine failure that ended the game.
+        failure: EngineForfeit,
+    },
+}
+
+/// Maximum recovery attempts permitted for one engine in one game.
+const MAX_RESTARTS_PER_ENGINE: usize = 1;
+
 /// Runs a complete UAI game across one engine process per player.
 pub(crate) fn play_uai_game(
     processes: &mut [EngineProcess],
+    launches: &[EngineLaunch],
+    game: GameState,
+    time_controls: &[TimeControl],
+) -> io::Result<GameResult> {
+    play_uai_game_with_recovery(
+        processes,
+        launches,
+        game,
+        time_controls,
+        false,
+        Duration::from_secs(5),
+    )
+}
+
+/// Runs a UAI game with optional bounded process recovery.
+pub(crate) fn play_uai_game_with_recovery(
+    processes: &mut [EngineProcess],
+    launches: &[EngineLaunch],
     mut game: GameState,
     time_controls: &[TimeControl],
-) -> io::Result<GameState> {
+    recover: bool,
+    startup_timeout: Duration,
+) -> io::Result<GameResult> {
     if processes.len() != game.boards().len()
+        || processes.len() != launches.len()
         || processes.len() != time_controls.len()
         || !(2..=4).contains(&processes.len())
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "a UAI game requires one time control and engine for each of two to four players",
+            "a UAI game requires one launch, time control, and engine for each of two to four players",
         ));
     }
 
@@ -225,16 +298,43 @@ pub(crate) fn play_uai_game(
         .cloned()
         .map(PlayerClock::new)
         .collect::<Vec<_>>();
+    let mut restart_counts = vec![0; processes.len()];
 
-    for process in processes.iter_mut() {
-        send_new_game(process)?;
+    for player in 0..processes.len() {
+        if let Err(error) = send_new_game(&mut processes[player]) {
+            let failure = transport_failure(error);
+            if !recover_engine(
+                &mut processes[player],
+                &launches[player],
+                &game,
+                &mut restart_counts[player],
+                recover,
+                startup_timeout,
+            ) {
+                return Ok(GameResult::Forfeit {
+                    game,
+                    failure: EngineForfeit {
+                        player,
+                        reason: failure.kind,
+                        message: failure.message,
+                    },
+                });
+            }
+        }
     }
 
     while !game.is_game_over() {
         let active_player = *game.active_player();
         let budget = clocks[active_player].move_budget();
         if budget.is_zero() {
-            return Err(timeout_error("engine has no time remaining"));
+            return Ok(GameResult::Forfeit {
+                game,
+                failure: EngineForfeit {
+                    player: active_player,
+                    reason: EngineFailureKind::Timeout,
+                    message: String::from("engine has no time remaining"),
+                },
+            });
         }
         let process = processes.get_mut(active_player).ok_or_else(|| {
             io::Error::new(
@@ -242,48 +342,179 @@ pub(crate) fn play_uai_game(
                 "game active player has no matching engine",
             )
         })?;
-        send_position(process, &game)?;
-        send_go_movetime(process, budget)?;
         let started = Instant::now();
-        let choice = receive_bestmove(process, started + budget)?;
-        clocks[active_player].finish_move(started.elapsed())?;
-        game.make_move(&choice).map_err(|_| {
-            engine_response_error(format!(
-                "engine player {active_player} returned an illegal move"
-            ))
-        })?;
+        let deadline = started + budget;
+        let choice = loop {
+            match request_move(process, &game, deadline) {
+                Ok(choice) => break choice,
+                Err(failure) => {
+                    if !failure.kind.recoverable()
+                        || !recover_engine(
+                            process,
+                            &launches[active_player],
+                            &game,
+                            &mut restart_counts[active_player],
+                            recover,
+                            startup_timeout,
+                        )
+                    {
+                        return Ok(GameResult::Forfeit {
+                            game,
+                            failure: EngineForfeit {
+                                player: active_player,
+                                reason: failure.kind,
+                                message: failure.message,
+                            },
+                        });
+                    }
+                }
+            }
+        };
+        if clocks[active_player]
+            .finish_move(started.elapsed())
+            .is_err()
+        {
+            return Ok(GameResult::Forfeit {
+                game,
+                failure: EngineForfeit {
+                    player: active_player,
+                    reason: EngineFailureKind::Timeout,
+                    message: String::from("engine exceeded its time control"),
+                },
+            });
+        }
+        if let Err(error) = game.make_move(&choice) {
+            let _ = error;
+            return Ok(GameResult::Forfeit {
+                game,
+                failure: EngineForfeit {
+                    player: active_player,
+                    reason: EngineFailureKind::IllegalMove,
+                    message: String::from("engine returned an illegal move"),
+                },
+            });
+        }
 
         if game.round_over() {
             game.setup_next_round();
         }
     }
 
-    Ok(game)
+    Ok(GameResult::Completed(game))
+}
+
+/// Sends one position/search request and reads the resulting move.
+fn request_move(
+    process: &mut EngineProcess,
+    game: &GameState,
+    deadline: Instant,
+) -> Result<Move, EngineTurnFailure> {
+    send_position(process, game).map_err(|error| transport_failure_at("position", error))?;
+    let budget = deadline.saturating_duration_since(Instant::now());
+    if budget < Duration::from_millis(1) {
+        return Err(EngineTurnFailure::new(
+            EngineFailureKind::Timeout,
+            "engine has no time remaining for its move",
+        ));
+    }
+    send_go_movetime(process, budget).map_err(|error| transport_failure_at("go", error))?;
+    receive_bestmove(process, deadline)
 }
 
 /// Reads engine output until the next move response, ignoring search updates.
-fn receive_bestmove(process: &mut EngineProcess, deadline: Instant) -> io::Result<Move> {
+fn receive_bestmove(
+    process: &mut EngineProcess,
+    deadline: Instant,
+) -> Result<Move, EngineTurnFailure> {
     loop {
         let timeout = deadline.saturating_duration_since(Instant::now());
-        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "engine closed stdout while searching",
-            )
-        })?;
+        let line = process
+            .recv_stdout(timeout)
+            .map_err(transport_failure)?
+            .ok_or_else(|| {
+                EngineTurnFailure::new(
+                    EngineFailureKind::Crash,
+                    "engine closed stdout while searching",
+                )
+            })?;
         if line.starts_with("info ") {
             continue;
         }
         if line.starts_with("error ") {
-            return Err(engine_response_error(line));
+            return Err(EngineTurnFailure::new(
+                EngineFailureKind::ErrorResponse,
+                line,
+            ));
         }
-        let move_choice = parse_bestmove(&line)
-            .map_err(|_| engine_response_error(format!("invalid bestmove response: {line}")))?;
+        let move_choice = parse_bestmove(&line).map_err(|_| {
+            EngineTurnFailure::new(
+                EngineFailureKind::MalformedResponse,
+                format!("invalid bestmove response: {line}"),
+            )
+        })?;
         if Instant::now() > deadline {
-            return Err(timeout_error("engine exceeded its time control"));
+            return Err(EngineTurnFailure::new(
+                EngineFailureKind::Timeout,
+                "engine exceeded its time control",
+            ));
         }
         return Ok(move_choice);
     }
+}
+
+/// Failure returned while an engine is producing one move.
+#[derive(Debug)]
+struct EngineTurnFailure {
+    kind: EngineFailureKind,
+    message: String,
+}
+
+impl EngineTurnFailure {
+    /// Creates a classified turn failure.
+    fn new(kind: EngineFailureKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+/// Converts an engine I/O failure into a recovery classification.
+fn transport_failure(error: io::Error) -> EngineTurnFailure {
+    transport_failure_at("engine transport", error)
+}
+
+/// Converts an I/O failure while handling a named protocol stage.
+fn transport_failure_at(context: &str, error: io::Error) -> EngineTurnFailure {
+    let kind = match error.kind() {
+        io::ErrorKind::TimedOut => EngineFailureKind::Timeout,
+        io::ErrorKind::BrokenPipe => EngineFailureKind::BrokenPipe,
+        _ => EngineFailureKind::Crash,
+    };
+    EngineTurnFailure::new(kind, format!("{context}: {error}"))
+}
+
+/// Restarts, handshakes, resets, and restores one engine when permitted.
+fn recover_engine(
+    process: &mut EngineProcess,
+    launch: &EngineLaunch,
+    game: &GameState,
+    restart_count: &mut usize,
+    recover: bool,
+    startup_timeout: Duration,
+) -> bool {
+    if !recover || *restart_count >= MAX_RESTARTS_PER_ENGINE {
+        return false;
+    }
+    *restart_count += 1;
+
+    process
+        .restart(launch, Duration::from_millis(100))
+        .and_then(|_| uai_handshake(process, startup_timeout).map(|_| ()))
+        .and_then(|_| uai_ready(process, startup_timeout))
+        .and_then(|_| send_new_game(process))
+        .and_then(|_| send_position(process, game))
+        .is_ok()
 }
 
 /// Creates a stable timeout error for a player that used too much time.
@@ -569,13 +800,19 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 mod tests {
     use super::{
         Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
-        send_go, send_go_movetime, send_new_game, send_position, uai_handshake, uai_ready,
+        play_uai_game_with_recovery, send_go, send_go_movetime, send_new_game, send_position,
+        uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
-    use crate::process::EngineProcess;
+    use crate::process::{EngineLaunch, EngineProcess};
     use azul_movegen::{Bag, Board, Bowl, GameState, Row, Tile, game_move::Move};
     use clap::Parser;
-    use std::{io::ErrorKind, process::Command, time::Duration};
+    use std::{
+        fs,
+        io::ErrorKind,
+        process::Command,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     /// Builds a platform-native child command for UAI handshake tests.
     fn fixture(script: &str) -> Command {
@@ -592,6 +829,37 @@ mod tests {
             command.args(["-c", script]);
             command
         }
+    }
+
+    /// Builds a reusable launch specification for a platform-native fixture.
+    fn launch_in_dir(script: &str, current_dir: Option<String>) -> EngineLaunch {
+        #[cfg(windows)]
+        {
+            EngineLaunch::new(
+                std::env::var("COMSPEC").unwrap(),
+                vec![
+                    String::from("/Q"),
+                    String::from("/V:ON"),
+                    String::from("/C"),
+                    script.into(),
+                ],
+                current_dir,
+            )
+        }
+
+        #[cfg(not(windows))]
+        {
+            EngineLaunch::new(
+                String::from("sh"),
+                vec![String::from("-c"), script.into()],
+                current_dir,
+            )
+        }
+    }
+
+    /// Builds a reusable launch specification for a fixture in the current directory.
+    fn launch(script: &str) -> EngineLaunch {
+        launch_in_dir(script, None)
     }
 
     #[test]
@@ -821,16 +1089,113 @@ mod tests {
             .build()
             .unwrap();
 
-        let mut processes = vec![
-            EngineProcess::spawn(&mut fixture(active_script)).unwrap(),
-            EngineProcess::spawn(&mut fixture(waiting_script)).unwrap(),
-        ];
+        let launches = [launch(active_script), launch(waiting_script)];
+        let mut processes = launches
+            .iter()
+            .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
+            .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let game = play_uai_game(&mut processes, game, &controls).unwrap();
+        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
 
-        assert!(game.is_game_over());
-        assert_eq!(game.get_winner(), 0);
-        assert_eq!(game.boards()[0].count_horizontal_lines(), 1);
+        match result {
+            super::GameResult::Completed(game) => {
+                assert!(game.is_game_over());
+                assert_eq!(game.get_winner(), 0);
+                assert_eq!(game.boards()[0].count_horizontal_lines(), 1);
+            }
+            super::GameResult::Forfeit { failure, .. } => {
+                panic!("unexpected forfeit: {failure:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn play_uai_game_recovers_once_from_an_engine_error() {
+        let marker = format!(
+            "azul-uai-recovery-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let current_dir = std::env::temp_dir();
+
+        #[cfg(windows)]
+        let script = format!(
+            "$marker = '{marker}'; while (($line = [Console]::In.ReadLine()) -ne $null) {{ switch -Wildcard ($line) {{ 'uai' {{ 'id name Recovery'; 'id author Test'; 'uaiok' }} 'isready' {{ 'readyok' }} 'go*' {{ if (Test-Path -LiteralPath $marker) {{ 'bestmove 010401' }} else {{ New-Item -ItemType File -Path $marker | Out-Null; 'error transient' }} }} 'quit' {{ exit 0 }} }} }}"
+        );
+        #[cfg(not(windows))]
+        let script = format!(
+            "while IFS= read -r line; do case \"$line\" in uai) printf 'id name Recovery\\nid author Test\\nuaiok\\n';; isready) printf 'readyok\\n';; go*) if [ -e \"{marker}\" ]; then printf 'bestmove 010401\\n'; else : > \"{marker}\"; printf 'error transient\\n'; fi;; quit) exit 0;; esac; done"
+        );
+
+        let board = Board::builder()
+            .placed([
+                [Some(0), Some(1), Some(2), Some(3), None],
+                [None; 5],
+                [None; 5],
+                [None; 5],
+                [None; 5],
+            ])
+            .build();
+        let mut bowls = vec![Bowl::default(); 6];
+        bowls[1].fill(vec![4 as Tile]);
+        let game = GameState::builder()
+            .boards(vec![board, Board::default()])
+            .bowls(bowls)
+            .bag(Bag::default())
+            .set_seed(42)
+            .build()
+            .unwrap();
+
+        #[cfg(windows)]
+        let launches = [
+            EngineLaunch::new(
+                String::from("powershell.exe"),
+                vec![
+                    String::from("-NoProfile"),
+                    String::from("-Command"),
+                    script.clone(),
+                ],
+                Some(current_dir.to_string_lossy().into_owned()),
+            ),
+            EngineLaunch::new(
+                String::from("powershell.exe"),
+                vec![
+                    String::from("-NoProfile"),
+                    String::from("-Command"),
+                    script.clone(),
+                ],
+                Some(current_dir.to_string_lossy().into_owned()),
+            ),
+        ];
+        #[cfg(not(windows))]
+        let launches = [
+            launch_in_dir(&script, Some(current_dir.to_string_lossy().into_owned())),
+            launch_in_dir(&script, Some(current_dir.to_string_lossy().into_owned())),
+        ];
+        let mut processes = launches
+            .iter()
+            .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
+            .collect::<Vec<_>>();
+        let controls = [TimeControl::Fixed(5_000), TimeControl::Fixed(5_000)];
+        let result = play_uai_game_with_recovery(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            true,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+
+        let _ = fs::remove_file(current_dir.join(&marker));
+        match result {
+            super::GameResult::Completed(game) => assert!(game.is_game_over()),
+            super::GameResult::Forfeit { failure, .. } => {
+                panic!("unexpected forfeit after recovery: {failure:?}")
+            }
+        }
     }
 
     #[test]
@@ -841,14 +1206,20 @@ mod tests {
         let script = "IFS= read line; printf 'bestmove 990499\\n'; IFS= read line; sleep 2";
 
         let game = GameState::new(2, 42).unwrap();
-        let mut processes = vec![
-            EngineProcess::spawn(&mut fixture(script)).unwrap(),
-            EngineProcess::spawn(&mut fixture("sleep 2")).unwrap(),
-        ];
+        let launches = [launch(script), launch("sleep 2")];
+        let mut processes = launches
+            .iter()
+            .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
+            .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let error = play_uai_game(&mut processes, game, &controls).unwrap_err();
+        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
 
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        match result {
+            super::GameResult::Forfeit { failure, .. } => {
+                assert_eq!(failure.reason, super::EngineFailureKind::IllegalMove);
+            }
+            super::GameResult::Completed(_) => panic!("illegal move completed the game"),
+        }
     }
 
     #[test]
@@ -859,14 +1230,20 @@ mod tests {
         let slow_script = "IFS= read line; sleep 1; printf 'bestmove 010401\\n'";
 
         let game = GameState::new(2, 42).unwrap();
-        let mut processes = vec![
-            EngineProcess::spawn(&mut fixture(slow_script)).unwrap(),
-            EngineProcess::spawn(&mut fixture("sleep 2")).unwrap(),
-        ];
+        let launches = [launch(slow_script), launch("sleep 2")];
+        let mut processes = launches
+            .iter()
+            .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
+            .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(10), TimeControl::Fixed(10)];
-        let error = play_uai_game(&mut processes, game, &controls).unwrap_err();
+        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
 
-        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        match result {
+            super::GameResult::Forfeit { failure, .. } => {
+                assert_eq!(failure.reason, super::EngineFailureKind::Timeout);
+            }
+            super::GameResult::Completed(_) => panic!("slow engine completed the game"),
+        }
     }
 
     #[test]

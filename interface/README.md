@@ -8,8 +8,9 @@ The current executable parses the options, starts configured child processes,
 manages their standard streams, performs the UAI startup sequence, and runs a
 two-to-four-player UAI game when all configured engines use UAI. It also retains
 a local human-input game. Match scheduling, time controls, persistence,
-diagnostics, and recovery options are parsed but are not all wired into
-execution yet.
+and diagnostics/resource-limit options are parsed but are not all wired into
+execution yet. The `--recover` option enables one bounded restart for a crashed
+or protocol-erroring engine during a UAI game.
 
 ## Quick start
 
@@ -72,7 +73,7 @@ both `tc` and `st` reject the command line.
 | `--openings` | `PATH` | Load starting positions or an opening book. |
 | `--swap` | flag | Balance which engine receives each starting side. |
 | `--timeout` | `N`, default `10` | Startup handshake/readiness timeout in seconds. Move deadlines come from each engine's `tc` or `st` setting. |
-| `--recover` | flag | Restart a crashed engine instead of immediately forfeiting. |
+| `--recover` | flag | Restart a crashed or protocol-erroring engine once instead of immediately forfeiting. |
 
 ## Diagnostics and logging options
 

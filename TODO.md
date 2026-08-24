@@ -8,9 +8,9 @@
   - Reject protocol responses that arrive out of phase, including duplicate terminal responses, unexpected EOF, and moves from the wrong player.
   - Add end-to-end tests using a deterministic fake UAI engine for normal play, malformed output, illegal moves, timeouts, and graceful `quit`.
 
-- Implement engine recovery, logging, and resource limits
-  - Classify timeout versus crash versus protocol errors, and assign a documented game result for each failure.
-  - Decide whether a timed-out engine is stopped and reused or terminated and restarted; test both the normal and failure paths.
+- Implement structured logging and resource limits
+  - Persist completed-game and forfeit records, including failure reason, player, restart attempts, and final clock state.
+  - Extend recovery coverage across startup failures, crashes, EOF, broken pipes, and repeated restart exhaustion.
   - Add structured command/response logging with engine identity, player, game, turn, timestamps, and redaction rules for sensitive paths or arguments.
   - Wire `--debug`, `--log`, `--stderr`, and `--quiet` to the same diagnostics pipeline without contaminating protocol stdout.
   - Apply `limit_mem` and `limit_threads` where supported, report unsupported limits clearly, and test configuration validation before process launch.

@@ -12,7 +12,7 @@
 //! The executable is currently a development harness: it can spawn configured
 //! child processes, perform the UAI startup sequence, enforce per-engine time
 //! controls, and run a local UAI game or human-input game. Tournaments and
-//! recovery are still pending.
+//! logging/resource-limit infrastructure are still pending.
 
 pub mod format;
 pub mod parsing;
@@ -20,7 +20,7 @@ pub mod protocol;
 
 mod process;
 
-use std::{io, process::Command, time::Duration};
+use std::{io, time::Duration};
 
 use azul_movegen::GameState;
 use clap::Parser;
@@ -28,8 +28,8 @@ use rand::{Rng, seq::IndexedRandom};
 
 use crate::{
     format::ProtocolFormat,
-    process::EngineProcess,
-    protocol::{Cli, Protocol, play_uai_game, uai_ready},
+    process::{EngineLaunch, EngineProcess},
+    protocol::{Cli, GameResult, Protocol, play_uai_game_with_recovery, uai_ready},
 };
 
 fn main() {
@@ -38,7 +38,7 @@ fn main() {
 
     // Spawn configured engines; protocol dispatch remains separate from the human loop.
 
-    let mut engines = cli
+    let launches = cli
         .engines
         .iter()
         .map(|e| {
@@ -47,26 +47,51 @@ fn main() {
                 .clone()
                 .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
                 .unwrap_or_default();
-            let mut command = Command::new(&e.path);
-            command.args(args);
-            if let Some(dir) = &e.dir {
-                command.current_dir(dir);
-            }
-            EngineProcess::spawn(&mut command).expect("Failed to start engine")
+            EngineLaunch::new(e.path.clone(), args, e.dir.clone())
         })
+        .collect::<Vec<_>>();
+    let mut engines = launches
+        .iter()
+        .map(|launch| EngineProcess::spawn_launch(launch).expect("Failed to start engine"))
         .collect::<Vec<_>>();
 
     let startup_timeout = Duration::from_secs(cli.timeout as u64);
-    for (engine, config) in engines.iter_mut().zip(&cli.engines) {
+    for (player, (engine, config)) in engines.iter_mut().zip(&cli.engines).enumerate() {
         if matches!(config.proto, Protocol::UAI) {
-            let identity = protocol::uai_handshake(engine, startup_timeout)
-                .expect("UAI engine handshake failed");
-            uai_ready(engine, startup_timeout).expect("UAI engine readiness check failed");
-            println!(
-                "UAI engine: {} by {}",
-                identity.name.as_deref().unwrap_or("<unnamed>"),
-                identity.author.as_deref().unwrap_or("<unknown author>")
-            );
+            let mut restarts = 0;
+            loop {
+                let startup = protocol::uai_handshake(engine, startup_timeout)
+                    .and_then(|identity| uai_ready(engine, startup_timeout).map(|_| identity));
+                match startup {
+                    Ok(identity) => {
+                        println!(
+                            "UAI engine: {} by {}",
+                            identity.name.as_deref().unwrap_or("<unnamed>"),
+                            identity.author.as_deref().unwrap_or("<unknown author>")
+                        );
+                        break;
+                    }
+                    Err(error)
+                        if cli.recover
+                            && restarts < 1
+                            && startup_failure_is_recoverable(&error) =>
+                    {
+                        restarts += 1;
+                        if let Err(restart_error) =
+                            engine.restart(&launches[player], Duration::from_millis(100))
+                        {
+                            eprintln!(
+                                "UAI engine {player} failed during startup and could not restart: {restart_error}"
+                            );
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("UAI engine {player} failed during startup: {error}");
+                        return;
+                    }
+                }
+            }
         }
     }
 
@@ -91,11 +116,26 @@ fn main() {
                     .expect("engine time control must be configured")
             })
             .collect::<Vec<_>>();
-        match play_uai_game(&mut engines, gamestate, &time_controls) {
-            Ok(gamestate) => {
+        match play_uai_game_with_recovery(
+            &mut engines,
+            &launches,
+            gamestate,
+            &time_controls,
+            cli.recover,
+            startup_timeout,
+        ) {
+            Ok(GameResult::Completed(gamestate)) => {
                 println!("{}", gamestate.fmt_protocol(Protocol::Human));
                 println!("Game over");
                 println!("Winner: player {}", gamestate.get_winner());
+            }
+            Ok(GameResult::Forfeit { game, failure }) => {
+                println!("{}", game.fmt_protocol(Protocol::Human));
+                eprintln!(
+                    "Player {} forfeited ({:?}): {}",
+                    failure.player, failure.reason, failure.message
+                );
+                println!("Game over by forfeit");
             }
             Err(error) => eprintln!("UAI game failed: {error}"),
         }
@@ -110,6 +150,14 @@ fn main() {
     for engine in engines {
         let _ = engine.shutdown(Duration::from_millis(100));
     }
+}
+
+/// Identifies startup failures that may be fixed by replacing the process.
+fn startup_failure_is_recoverable(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::BrokenPipe | io::ErrorKind::UnexpectedEof | io::ErrorKind::TimedOut
+    ) || error.to_string().starts_with("error ")
 }
 
 /// Runs the interactive human-input game loop.
