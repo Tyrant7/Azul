@@ -4,7 +4,6 @@
 - Implement full tests for movegen sections
 - Finish README file
 - Validate supported player counts and reject invalid or empty game states safely
-- Inject a seedable RNG instead of relying on the thread-local RNG
 - Define and test invariants for bowls, bags, board holds, placed tiles, and tile counts
 - Verify all scoring, penalty, bonus, round-ending, and tie-breaking edge cases
 - Add efficient legal-move generation and avoid unnecessary allocations where profiling supports it

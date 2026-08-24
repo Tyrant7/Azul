@@ -2,6 +2,7 @@ use azul_movegen::{
     Bag, Board, Bowl, GameState, Tile,
     board::{BOARD_DIMENSION, BonusTypes},
 };
+use rand::{Rng, SeedableRng, rng, rngs::SmallRng};
 
 use crate::format::ProtocolFormat;
 
@@ -155,7 +156,8 @@ impl FromAzulFEN for GameState {
             .chars()
             .map(|c| c.to_string().parse::<Tile>().or(Err(ParseGameStateError)))
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
-        let bag = Bag::new(items);
+        let mut rng = SmallRng::from_seed(rand::rng().random());
+        let bag = Bag::new(items, &mut rng);
 
         let active_player_and_first_token = sections.next().ok_or(ParseGameStateError)?;
         let (active_player, first_token_owner) = match active_player_and_first_token

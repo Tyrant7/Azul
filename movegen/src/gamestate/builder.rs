@@ -1,3 +1,5 @@
+use rand::{SeedableRng, rngs::SmallRng};
+
 use super::GameState;
 use crate::{Bag, Board, Bowl, Tile};
 
@@ -9,6 +11,7 @@ pub struct GameStateBuilder {
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
+    seed: u64,
 }
 
 impl GameStateBuilder {
@@ -42,6 +45,12 @@ impl GameStateBuilder {
         self
     }
 
+    /// Sets the game seed.
+    pub fn set_seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
     /// Builds a game state from the configured fields.
     pub fn build(self) -> GameState {
         GameState {
@@ -50,6 +59,7 @@ impl GameStateBuilder {
             bowls: self.bowls,
             bag: self.bag,
             first_token_owner: self.first_token_owner,
+            rng: SmallRng::seed_from_u64(self.seed),
         }
     }
 }

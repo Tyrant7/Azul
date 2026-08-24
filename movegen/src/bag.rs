@@ -1,4 +1,4 @@
-use rand::{rng, seq::SliceRandom};
+use rand::{rngs::SmallRng, seq::SliceRandom};
 
 /// A shuffled collection from which items are drawn and removed.
 ///
@@ -10,16 +10,16 @@ pub struct Bag<T> {
 
 impl<T> Bag<T> {
     /// Creates a bag containing `items` in random order.
-    pub fn new(mut items: Vec<T>) -> Self {
-        items.shuffle(&mut rng());
+    pub fn new(mut items: Vec<T>, rng: &mut SmallRng) -> Self {
+        items.shuffle(rng);
         Bag { items }
     }
 
     /// Replaces the contents with `items` in random order.
     ///
     /// Items previously in the bag are discarded.
-    pub fn restock(&mut self, mut items: Vec<T>) {
-        items.shuffle(&mut rng());
+    pub fn restock(&mut self, mut items: Vec<T>, rng: &mut SmallRng) {
+        items.shuffle(rng);
         self.items = items;
     }
 

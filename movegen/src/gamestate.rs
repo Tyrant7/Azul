@@ -17,6 +17,7 @@ const CENTRE_BOWL_IDX: usize = 0;
 
 mod builder;
 pub use builder::GameStateBuilder;
+use rand::{SeedableRng, rngs::SmallRng};
 
 /// Complete mutable state for an Azul game.
 ///
@@ -29,6 +30,7 @@ pub struct GameState {
     bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
+    rng: SmallRng,
 }
 
 /// Returns the number of factory bowls plus the centre area for `players` players.
@@ -52,13 +54,15 @@ impl GameState {
     /// Creates a new game with empty bowls and boards for `players` players.
     ///
     /// Call [`GameState::setup_next_round`] before requesting or applying moves.
-    pub fn new(players: usize) -> Self {
+    pub fn new(players: usize, seed: u64) -> Self {
+        let mut rng = SmallRng::seed_from_u64(seed);
         GameState {
             active_player: 0,
             boards: vec![Board::default(); players],
             bowls: vec![Bowl::default(); get_bowl_count(players)],
-            bag: Bag::new(get_default_tileset()),
+            bag: Bag::new(get_default_tileset(), &mut rng),
             first_token_owner: None,
+            rng,
         }
     }
 
@@ -107,7 +111,7 @@ impl GameState {
                                 .count()
                     ]);
                 }
-                bag.restock(unused_tiles);
+                bag.restock(unused_tiles, &mut self.rng);
             }
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
             bowl.fill(next.clone());

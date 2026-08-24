@@ -24,7 +24,7 @@ use std::{
 
 use azul_movegen::GameState;
 use clap::Parser;
-use rand::seq::IndexedRandom;
+use rand::{Rng, seq::IndexedRandom};
 
 use crate::{
     format::ProtocolFormat,
@@ -57,7 +57,8 @@ fn main() {
         println!("{:?}", eng);
     }
 
-    let mut gamestate = GameState::new(2);
+    let seed = rand::rng().random();
+    let mut gamestate = GameState::new(2, seed);
     gamestate.setup_next_round();
     println!("{}", gamestate.fmt_protocol(Protocol::Human));
 
