@@ -5,9 +5,10 @@ engines and human players. It accepts engine and match configuration and is
 designed around the [UAI protocol](protocol.md).
 
 The current executable is still a development harness. It parses the options,
-starts configured child processes, and runs a local human-input game. Match
-scheduling, engine I/O, time controls, persistence, diagnostics, and recovery
-options are parsed but are not all wired into execution yet.
+starts configured child processes, manages their standard streams, and runs a
+local human-input game. Match scheduling, UAI command dispatch, time controls,
+persistence, diagnostics, and recovery options are parsed but are not all
+wired into execution yet.
 
 ## Quick start
 

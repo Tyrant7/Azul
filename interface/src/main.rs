@@ -11,7 +11,7 @@
 //!
 //! The executable is currently a development harness: it can spawn configured
 //! child processes and run a local human-input game, but full UAI message
-//! dispatch, engine I/O, tournaments, timing, and recovery are still pending.
+//! dispatch, tournaments, timing, and recovery are still pending.
 
 pub mod format;
 pub mod parsing;
@@ -19,7 +19,7 @@ pub mod protocol;
 
 mod process;
 
-use std::{io, process::Command};
+use std::{io, process::Command, time::Duration};
 
 use azul_movegen::GameState;
 use clap::Parser;
@@ -27,6 +27,7 @@ use rand::{Rng, seq::IndexedRandom};
 
 use crate::{
     format::ProtocolFormat,
+    process::EngineProcess,
     protocol::{Cli, Protocol},
 };
 
@@ -34,7 +35,7 @@ fn main() {
     let cli = Cli::parse();
     println!("{:#?}", cli);
 
-    // Spawn configured engines; their I/O is not yet connected to the game loop.
+    // Spawn configured engines; protocol dispatch remains separate from the human loop.
 
     let engines = cli
         .engines
@@ -45,16 +46,16 @@ fn main() {
                 .clone()
                 .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
                 .unwrap_or_default();
-            Command::new(&e.path)
-                .args(args)
-                .spawn()
-                .expect("Failed to start engine")
+            let mut command = Command::new(&e.path);
+            command.args(args);
+            if let Some(dir) = &e.dir {
+                command.current_dir(dir);
+            }
+            EngineProcess::spawn(&mut command).expect("Failed to start engine")
         })
         .collect::<Vec<_>>();
 
-    for eng in engines {
-        println!("{:?}", eng);
-    }
+    println!("started {} engine process(es)", engines.len());
 
     let seed = rand::rng().random();
     let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
@@ -62,6 +63,10 @@ fn main() {
     println!("{}", gamestate.fmt_protocol(Protocol::Human));
 
     listen_for_input(gamestate, Protocol::Human);
+
+    for engine in engines {
+        let _ = engine.shutdown(Duration::from_millis(100));
+    }
 }
 
 /// Runs the interactive human-input game loop.
