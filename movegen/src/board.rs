@@ -15,13 +15,14 @@ const TILE_TYPE_BONUS: usize = 10;
 mod builder;
 pub use builder::{BoardBuilder, BonusTypes};
 
-/// One player's pattern lines, wall, bonuses, penalties, and score.
+/// One player's pattern lines, wall, bonuses, penalty spaces, and score.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Board {
     holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     bonuses: BonusTypes,
     penalties: usize,
+    penalty_tiles: usize,
     score: usize,
 }
 
@@ -36,6 +37,7 @@ impl Board {
         placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         bonuses: BonusTypes,
         penalties: usize,
+        penalty_tiles: usize,
         score: usize,
     }
 
@@ -48,6 +50,11 @@ impl Board {
             .filter_map(|&t| t)
     }
 
+    /// Returns the number of physical tiles held by this board.
+    pub fn get_tile_count(&self) -> usize {
+        self.get_active_tiles().count() + self.penalty_tiles
+    }
+
     /// Returns every valid destination for `tile_type`, including the floor.
     ///
     /// A wall row is valid when its pattern line is empty or already holds the
@@ -57,6 +64,10 @@ impl Board {
         for (row_idx, hold) in self.holds.iter().enumerate() {
             // A pattern line cannot mix tile types.
             if hold.iter().any(|t| t.is_some_and(|x| x != tile_type)) {
+                continue;
+            }
+            // A completed pattern line cannot accept more tiles this round.
+            if hold.iter().filter(|tile| tile.is_some()).count() >= row_idx + 1 {
                 continue;
             }
             // A tile type may appear only once in each wall row.
@@ -94,6 +105,7 @@ impl Board {
         let row_idx = match row_idx {
             Row::Floor => {
                 self.penalties += tile_count;
+                self.penalty_tiles += tile_count;
                 self.penalties += penalty;
                 return Ok(());
             }
@@ -110,14 +122,21 @@ impl Board {
 
         // Fill the pattern line and send overflow to the penalty area.
         let row_capacity = row_idx + 1;
-        for row in row.iter_mut().take(tile_count.min(row_capacity)) {
-            *row = Some(tile_type);
+        let occupied = row.iter().filter(|tile| tile.is_some()).count();
+        let available = row_capacity.saturating_sub(occupied);
+        for slot in row
+            .iter_mut()
+            .filter(|slot| slot.is_none())
+            .take(tile_count.min(available))
+        {
+            *slot = Some(tile_type);
         }
 
-        let overflow = tile_count.saturating_sub(row_capacity);
+        let overflow = tile_count.saturating_sub(available);
         for _ in 0..overflow {
             self.penalties += 1;
         }
+        self.penalty_tiles += overflow;
 
         // Apply explicit penalties, such as the first-player-token penalty.
         self.penalties += penalty;
@@ -130,12 +149,14 @@ impl Board {
     /// This places one tile from each completed line onto the wall, scores newly
     /// placed tiles and newly earned bonuses, applies penalty tiles, and clears
     /// the resolved lines and penalties.
-    pub fn place_holds(&mut self) {
+    pub fn place_holds(&mut self) -> usize {
+        let mut discarded_tiles = self.penalty_tiles;
         for (row_idx, row) in self.holds.iter_mut().enumerate() {
             let tiles_in_row = row.iter().filter(|tile| tile.is_some()).count();
 
             // A pattern line is complete when it contains more tiles than its zero-based row index.
             if tiles_in_row > row_idx {
+                discarded_tiles += tiles_in_row - 1;
                 // Determine the fixed wall position for this tile type and row.
                 let tile_type = row[0].unwrap();
                 let col_idx = Board::get_tile_place_col(tile_type, row_idx);
@@ -199,6 +220,8 @@ impl Board {
             .score
             .saturating_sub(Board::get_penalty_point_value(self.penalties));
         self.penalties = 0;
+        self.penalty_tiles = 0;
+        discarded_tiles
     }
 
     /// Grants this board score for each bonus it satisfies that has not yet been collected,

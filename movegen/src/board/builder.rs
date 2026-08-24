@@ -16,6 +16,7 @@ pub struct BoardBuilder {
     placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
     bonuses: BonusTypes,
     penalties: usize,
+    penalty_tiles: Option<usize>,
     score: usize,
 }
 
@@ -38,9 +39,15 @@ impl BoardBuilder {
         self
     }
 
-    /// Sets the number of penalty tiles.
+    /// Sets the total number of occupied penalty spaces.
     pub fn penalties(mut self, penalties: usize) -> Self {
         self.penalties = penalties;
+        self
+    }
+
+    /// Sets the number of penalty spaces occupied by physical tiles.
+    pub fn penalty_tiles(mut self, penalty_tiles: usize) -> Self {
+        self.penalty_tiles = Some(penalty_tiles);
         self
     }
 
@@ -57,6 +64,7 @@ impl BoardBuilder {
             placed: self.placed,
             bonuses: self.bonuses,
             penalties: self.penalties,
+            penalty_tiles: self.penalty_tiles.unwrap_or(self.penalties),
             score: self.score,
         }
     }

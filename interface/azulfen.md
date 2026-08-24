@@ -20,13 +20,14 @@ For each board, the collected bonuses also need to be known. Each bonus type is 
 and 1 is a collected bonus.
 e.x.  00001 00000 00000 corresponds to having collected only the horizontal bonus for the final row
 
-The score and penalty tiles for each board and encoded and single numbers at the end of the FEN
-e.x.  10 3 corresponds to 10 score and 3 penalty tiles
+The score, total penalty spaces, and physical penalty-tile count for each board are encoded as
+three numbers at the end of the FEN. The physical count excludes the first-player token.
+e.x.  10 3 2 corresponds to 10 score, 3 occupied penalty spaces, and 2 penalty tiles
 
 And finally, each board FEN is separated by a semi-colon
 
 Altogether a typical board FEN may look something like follows:
-2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
+2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 1 ;
 
 
 ## Bowls:
@@ -50,16 +51,20 @@ e.x.  03440140321203
 
 Finally, the active player and first player token owner are encoded at the end in order.
 The optional numeric seed follows them, and the current xoshiro256++ state is encoded as a tagged
-hexadecimal token after the seed. This state token is emitted for every newly serialized state.
+hexadecimal token after the seed, followed by the number of physical tiles in the discard pile.
+These tracking fields are emitted for every newly serialized state.
 e.x.  0 2 corresponds to the active player being player 0, and the first player token owner being player 2
 If nobody owns the first player token, then "-" will be written in its place
-e.x.  0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> records the seed and exact random state
+e.x.  0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> 7 records the seed, exact random state,
+and seven discarded physical tiles
 
 The seed identifies the game or episode seed used to initialize the random stream.
 The state token is the serialization of the random generator's current internal state and is what
 guarantees exact continuation after deserialization. Older FENs containing only the active player,
 token owner, or seed remain readable, but do not contain exact random continuation state.
 When no initial seed is available, the seed position is written as `-` before the state token.
+Older board and metadata sections without tracking fields remain readable, but do not carry exact
+discard accounting.
 
 
 ## Summary
@@ -67,9 +72,9 @@ When no initial seed is available, the seed position is written as `-` before th
 In full, a complete AzulFEN may look something like the following:
 
 2-1-/-4/--3/5/4- 0011000013 00000 00000 00000 7 1 ;
-1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 ;
+1--1-/-4/1-3/4-/4- 0000220013 00000 00000 00000 10 0 0 ;
 | 0123003 - - - 0123 0001
 | 0133041230412404142
-| 0 - 12345 xoshiro256plusplus:<64 hexadecimal digits>
+| 0 - 12345 xoshiro256plusplus:<64 hexadecimal digits> 7
 
 AzulFENs should be outputted on a single-line, with a newline as the final character

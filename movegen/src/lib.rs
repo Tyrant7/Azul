@@ -47,5 +47,5 @@ pub use bag::Bag;
 pub use board::Board;
 pub use bowl::Bowl;
 pub use game_move::Move;
-pub use gamestate::{GameState, GameStateError, Xoshiro256PlusPlus};
+pub use gamestate::{GameState, GameStateError, TOTAL_TILE_COUNT, Xoshiro256PlusPlus};
 pub use row::Row;

@@ -13,6 +13,7 @@ pub struct GameStateBuilder {
     first_token_owner: Option<usize>,
     seed: Option<u64>,
     rng_state: Option<Vec<u8>>,
+    discarded_tiles: usize,
 }
 
 impl GameStateBuilder {
@@ -58,10 +59,16 @@ impl GameStateBuilder {
         self
     }
 
+    /// Sets the number of physical tiles already returned to the discard pile.
+    pub fn discarded_tiles(mut self, discarded_tiles: usize) -> Self {
+        self.discarded_tiles = discarded_tiles;
+        self
+    }
+
     /// Builds a validated game state from the configured fields.
     ///
     /// Construction fails when the player count, bowl count, active-player
-    /// index, or first-player-token owner is invalid.
+    /// index, first-player-token owner, or RNG state is invalid.
     pub fn build(self) -> Result<GameState, GameStateError> {
         validate_components(
             self.active_player,
@@ -90,6 +97,7 @@ impl GameStateBuilder {
             first_token_owner: self.first_token_owner,
             rng,
             seed: self.seed,
+            discarded_tiles: self.discarded_tiles,
         })
     }
 }

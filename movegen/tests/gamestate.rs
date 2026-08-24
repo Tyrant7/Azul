@@ -1,6 +1,7 @@
 use azul_movegen::board::BOARD_DIMENSION;
 use azul_movegen::{
-    Bag, Board, Bowl, GameState, GameStateError, Move, Row, Tile, Xoshiro256PlusPlus,
+    Bag, Board, Bowl, GameState, GameStateError, Move, Row, TOTAL_TILE_COUNT, Tile,
+    Xoshiro256PlusPlus,
 };
 
 /// Creates a vector of empty bowls with the requested length.
@@ -28,6 +29,8 @@ fn new_creates_the_expected_components() {
     assert_eq!(state.bowls().len(), 6);
     assert_eq!(state.bag().items().len(), 100);
     assert_eq!(*state.first_token_owner(), None);
+    assert_eq!(*state.discarded_tiles(), 0);
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(state.round_over());
 }
 
@@ -115,6 +118,7 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
             .all(|bowl| bowl.tiles().len() == 4)
     );
     assert_eq!(first.bag().items().len(), 80);
+    assert_eq!(first.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(!first.round_over());
     assert_eq!(first.bag().items(), second.bag().items());
     for (first_bowl, second_bowl) in first.bowls().iter().zip(second.bowls()) {
@@ -208,6 +212,94 @@ fn first_centre_pick_assigns_the_token_and_penalty() {
     assert_eq!(*state.first_token_owner(), Some(0));
     assert_eq!(*state.boards()[0].penalties(), 2);
     assert_eq!(*state.active_player(), 1);
+}
+
+#[test]
+fn setup_tracks_discarded_tiles_without_counting_the_token() {
+    let mut board = Board::default();
+    board.hold_tiles(2, 2, Row::Floor, 1).unwrap();
+    let mut bowls = empty_bowls(6);
+    bowls[0] = Bowl::from_tiles(vec![3]);
+    let mut state = GameState::builder()
+        .boards(vec![board, Board::default()])
+        .bowls(bowls)
+        .bag(Bag::from_items(vec![0; 97]))
+        .first_token_owner(Some(0))
+        .set_seed(23)
+        .build()
+        .unwrap();
+
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
+    state.setup_next_round();
+
+    assert_eq!(*state.discarded_tiles(), 2);
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
+}
+
+#[test]
+fn restocking_excludes_tiles_already_dealt_during_setup() {
+    let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+    placed[0][0] = Some(0);
+    let state = GameState::builder()
+        .boards(vec![
+            Board::builder().placed(placed).build(),
+            Board::default(),
+        ])
+        .bowls(empty_bowls(6))
+        .bag(Bag::from_items(vec![0]))
+        .discarded_tiles(98)
+        .set_seed(31)
+        .build()
+        .unwrap();
+    let mut state = state;
+
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
+    state.setup_next_round();
+
+    let mut counts = [0; BOARD_DIMENSION];
+    for tile in state
+        .bag()
+        .items()
+        .iter()
+        .copied()
+        .chain(
+            state
+                .bowls()
+                .iter()
+                .flat_map(|bowl| bowl.tiles().iter().copied()),
+        )
+        .chain(
+            state
+                .boards()
+                .iter()
+                .flat_map(|board| board.get_active_tiles()),
+        )
+    {
+        counts[tile] += 1;
+    }
+    assert!(counts.iter().all(|&count| count <= 20));
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
+}
+
+#[test]
+fn tile_count_is_conserved_through_random_gameplay() {
+    let mut state = GameState::new(2, 103).unwrap();
+    state.setup_next_round();
+
+    for step in 0..300 {
+        assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT, "step {step}");
+        if state.is_game_over() {
+            break;
+        }
+        if state.round_over() {
+            state.setup_next_round();
+            continue;
+        }
+        let choice = state.get_valid_moves().into_iter().next().unwrap();
+        state.make_move(&choice).unwrap();
+    }
+
+    assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT, "after gameplay");
 }
 
 #[test]

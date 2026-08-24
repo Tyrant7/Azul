@@ -47,82 +47,94 @@ impl FromAzulFEN for Board {
     fn from_azul_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut builder = Board::builder();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
-        match parts.as_slice() {
-            [
-                placed_parts,
-                held,
-                bonus_rows,
-                bonus_cols,
-                bonus_tile_types,
-                score,
-                penalties,
-            ] => {
-                // Decode the wall using run-length counts for empty positions.
-                let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
-                let mut y = 0;
-                let mut x = 0;
-                for p in placed_parts.chars() {
-                    if let Ok(step) = p.to_string().parse::<usize>() {
-                        x += step;
-                    } else if p == '-' {
-                        placed[y][x] = Some(Board::get_tile_type_at_pos(y, x));
-                        x += 1;
-                    }
-                    if x >= BOARD_DIMENSION {
-                        y += 1;
-                        x = 0;
-                    }
-                }
-                builder = builder.placed(placed);
-
-                // Decode each pattern line as a tile type and tile count.
-                let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
-                for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
-                    let tile_type = h[0]
-                        .to_string()
-                        .parse::<Tile>()
-                        .or(Err(ParseGameStateError))?;
-                    let tile_count = h[1]
-                        .to_string()
-                        .parse::<Tile>()
-                        .or(Err(ParseGameStateError))?;
-                    if tile_count == 0 {
-                        continue;
-                    }
-                    for n in 0..tile_count {
-                        holds[i][n] = Some(tile_type);
-                    }
-                }
-                builder = builder.holds(holds);
-
-                // Decode collected row, column, and tile-type bonuses.
-                builder = builder.bonuses(BonusTypes {
-                    rows: bonus_rows
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                    columns: bonus_cols
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                    tile_types: bonus_tile_types
-                        .chars()
-                        .map(|c| c == '1')
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .or(Err(ParseGameStateError))?,
-                });
-
-                // Decode the score and stored penalty-tile count.
-                builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
-                builder = builder.penalties(penalties.parse().or(Err(ParseGameStateError))?);
-            }
+        let penalty_tiles = match parts.len() {
+            7 => None,
+            8 => Some(parts[7]),
             _ => return Err(ParseGameStateError),
         };
+        let [
+            placed_parts,
+            held,
+            bonus_rows,
+            bonus_cols,
+            bonus_tile_types,
+            score,
+            penalties,
+            ..,
+        ] = parts.as_slice()
+        else {
+            return Err(ParseGameStateError);
+        };
+
+        {
+            // Decode the wall using run-length counts for empty positions.
+            let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+            let mut y = 0;
+            let mut x = 0;
+            for p in placed_parts.chars() {
+                if let Ok(step) = p.to_string().parse::<usize>() {
+                    x += step;
+                } else if p == '-' {
+                    placed[y][x] = Some(Board::get_tile_type_at_pos(y, x));
+                    x += 1;
+                }
+                if x >= BOARD_DIMENSION {
+                    y += 1;
+                    x = 0;
+                }
+            }
+            builder = builder.placed(placed);
+
+            // Decode each pattern line as a tile type and tile count.
+            let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
+            for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
+                let tile_type = h[0]
+                    .to_string()
+                    .parse::<Tile>()
+                    .or(Err(ParseGameStateError))?;
+                let tile_count = h[1]
+                    .to_string()
+                    .parse::<Tile>()
+                    .or(Err(ParseGameStateError))?;
+                if tile_count == 0 {
+                    continue;
+                }
+                for n in 0..tile_count {
+                    holds[i][n] = Some(tile_type);
+                }
+            }
+            builder = builder.holds(holds);
+
+            // Decode collected row, column, and tile-type bonuses.
+            builder = builder.bonuses(BonusTypes {
+                rows: bonus_rows
+                    .chars()
+                    .map(|c| c == '1')
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .or(Err(ParseGameStateError))?,
+                columns: bonus_cols
+                    .chars()
+                    .map(|c| c == '1')
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .or(Err(ParseGameStateError))?,
+                tile_types: bonus_tile_types
+                    .chars()
+                    .map(|c| c == '1')
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .or(Err(ParseGameStateError))?,
+            });
+
+            // Decode the score, occupied penalty spaces, and physical penalty tiles.
+            builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
+            builder = builder.penalties(penalties.parse().or(Err(ParseGameStateError))?);
+            if let Some(penalty_tiles) = penalty_tiles {
+                builder =
+                    builder.penalty_tiles(penalty_tiles.parse().or(Err(ParseGameStateError))?);
+            }
+        }
         Ok(builder.build())
     }
 }
@@ -171,17 +183,29 @@ impl FromAzulFEN for GameState {
         };
         let mut seed = None;
         let mut rng_state = None;
+        let mut discarded_tiles = None;
         match metadata.as_slice() {
             [_, _] => {}
             [_, _, state] if state.starts_with(RNG_STATE_PREFIX) => {
                 rng_state = Some(decode_rng_state(state)?);
             }
             [_, _, seed_token] => {
-                seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                if *seed_token != "-" {
+                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                }
             }
             [_, _, seed_token, state] => {
-                seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                if *seed_token != "-" {
+                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                }
                 rng_state = Some(decode_rng_state(state)?);
+            }
+            [_, _, seed_token, state, discarded] => {
+                if *seed_token != "-" {
+                    seed = Some(seed_token.parse::<u64>().or(Err(ParseGameStateError))?);
+                }
+                rng_state = Some(decode_rng_state(state)?);
+                discarded_tiles = Some(discarded.parse().or(Err(ParseGameStateError))?);
             }
             _ => return Err(ParseGameStateError),
         }
@@ -197,6 +221,9 @@ impl FromAzulFEN for GameState {
         if let Some(rng_state) = rng_state {
             builder = builder.set_rng_state(rng_state);
         }
+        if let Some(discarded_tiles) = discarded_tiles {
+            builder = builder.discarded_tiles(discarded_tiles);
+        }
         builder.build().map_err(|_| ParseGameStateError)
     }
 }
@@ -204,8 +231,8 @@ impl FromAzulFEN for GameState {
 impl ToAzulFEN for GameState {
     /// Returns the AzulFEN encoding for this game state.
     ///
-    /// The metadata includes the optional game seed and current random state,
-    /// allowing exact snapshot restoration.
+    /// The metadata includes the optional game seed, current random state, and
+    /// discard count, allowing exact snapshot restoration and tile accounting.
     /// See `interface/azulfen.md` in the repository for the format specification.
     fn to_azul_fen(&self) -> String {
         // Serialize board components.
@@ -244,6 +271,8 @@ impl ToAzulFEN for GameState {
         azul_fen.push(' ');
         azul_fen.push_str(RNG_STATE_PREFIX);
         azul_fen.push_str(&encode_rng_state(&self.rng_state()));
+        azul_fen.push(' ');
+        azul_fen.push_str(&self.discarded_tiles().to_string());
 
         azul_fen.push('\n');
         azul_fen
@@ -274,7 +303,7 @@ fn decode_rng_state(token: &str) -> Result<Vec<u8>, ParseGameStateError> {
 #[cfg(test)]
 mod tests {
     use super::{FromAzulFEN, ToAzulFEN};
-    use azul_movegen::GameState;
+    use azul_movegen::{Bag, Board, Bowl, GameState, Row};
 
     #[test]
     fn seeded_azulfen_round_trips_two_through_four_players() {
@@ -324,5 +353,28 @@ mod tests {
         }
         assert_eq!(parsed.rng_state(), original.rng_state());
         assert_eq!(parsed.to_azul_fen(), original.to_azul_fen());
+    }
+
+    #[test]
+    fn azulfen_round_trip_preserves_penalty_and_discard_tracking() {
+        let mut board = Board::default();
+        board.hold_tiles(2, 2, Row::Floor, 1).unwrap();
+        let original = GameState::builder()
+            .boards(vec![board, Board::default()])
+            .bowls(vec![Bowl::default(); 6])
+            .bag(Bag::default())
+            .first_token_owner(Some(0))
+            .set_seed(42)
+            .discarded_tiles(7)
+            .build()
+            .unwrap();
+
+        let fen = original.to_azul_fen();
+        let parsed = GameState::from_azul_fen(&fen).unwrap();
+
+        assert_eq!(*parsed.boards()[0].penalties(), 3);
+        assert_eq!(*parsed.boards()[0].penalty_tiles(), 2);
+        assert_eq!(*parsed.discarded_tiles(), 7);
+        assert_eq!(parsed.to_azul_fen(), fen);
     }
 }

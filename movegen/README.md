@@ -7,7 +7,8 @@ four players.
 `GameState::new(players, seed)` initializes a deterministic game using
 xoshiro256++. The state exposes its serialized current RNG state through
 `GameState::rng_state()`; `GameStateBuilder::set_rng_state` restores that state
-for exact continuation. The `Bag::new` and `Bag::restock` constructors shuffle
+for exact continuation. `GameState::get_tile_count()` tracks the complete
+100-tile conservation invariant, including the discard pile. The `Bag::new` and `Bag::restock` constructors shuffle
 their inputs, while `Bag::from_items` preserves an already serialized draw
 order.
 

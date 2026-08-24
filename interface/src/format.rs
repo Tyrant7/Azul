@@ -137,11 +137,13 @@ impl ProtocolFormat for Board {
             output.push_str(&if tile_type { 1 } else { 0 }.to_string());
         }
 
-        // Encode score and penalty-tile count.
+        // Encode score, occupied penalty spaces, and physical penalty tiles.
         output.push(' ');
         output.push_str(&self.score().to_string());
         output.push(' ');
         output.push_str(&self.penalties().to_string());
+        output.push(' ');
+        output.push_str(&self.penalty_tiles().to_string());
 
         // Terminate the board component.
         output.push_str(" ;");

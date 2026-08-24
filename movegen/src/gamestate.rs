@@ -44,6 +44,9 @@ impl SeedableRng for Xoshiro256PlusPlus {
 /// The number of tiles of each type in a complete game set.
 const TILES_PER_TYPE: usize = 20;
 
+/// The number of physical tiles in a complete Azul set.
+pub const TOTAL_TILE_COUNT: usize = TILES_PER_TYPE * BOARD_DIMENSION;
+
 /// The number of tiles placed in each factory bowl during round setup.
 const BOWL_CAPACITY: usize = 4;
 
@@ -74,7 +77,8 @@ pub enum GameStateError {
 /// the tile bag, the active player, and the owner of the first-player token.
 /// An optional seed records the seed used to initialize the game's random
 /// stream. The current xoshiro state is available through
-/// [`GameState::rng_state`] for exact snapshot and replay support.
+/// [`GameState::rng_state`] for exact snapshot and replay support. Physical
+/// tiles returned to the discard pile are tracked separately.
 #[derive(Debug)]
 pub struct GameState {
     active_player: usize,
@@ -84,6 +88,7 @@ pub struct GameState {
     first_token_owner: Option<usize>,
     rng: Xoshiro256PlusPlus,
     seed: Option<u64>,
+    discarded_tiles: usize,
 }
 
 /// Returns the number of factory bowls plus the centre area for `players` players.
@@ -151,6 +156,7 @@ impl GameState {
             first_token_owner: None,
             rng,
             seed: Some(seed),
+            discarded_tiles: 0,
         })
     }
 
@@ -166,6 +172,7 @@ impl GameState {
         bag: Bag<Tile>,
         first_token_owner: Option<usize>,
         seed: Option<u64>,
+        discarded_tiles: usize,
     }
 
     /// Returns the serialized current state of the random generator.
@@ -176,6 +183,21 @@ impl GameState {
         bincode::serialize(&self.rng.0).expect("xoshiro state serialization cannot fail")
     }
 
+    /// Returns the number of physical tiles still accounted for by the game.
+    ///
+    /// This includes tiles in the bag, bowls, boards, and discard pile. A
+    /// complete game state accounts for all [`TOTAL_TILE_COUNT`] tiles.
+    pub fn get_tile_count(&self) -> usize {
+        self.bag.items().len()
+            + self
+                .bowls
+                .iter()
+                .map(|bowl| bowl.tiles().len())
+                .sum::<usize>()
+            + self.boards.iter().map(Board::get_tile_count).sum::<usize>()
+            + self.discarded_tiles
+    }
+
     /// Resolves the previous round and prepares the next one.
     ///
     /// This places completed pattern-line tiles, applies board scoring and
@@ -184,19 +206,23 @@ impl GameState {
     pub fn setup_next_round(&mut self) {
         // Resolve each board before refilling the bowls.
         for board in self.boards.iter_mut() {
-            board.place_holds();
+            self.discarded_tiles += board.place_holds();
         }
 
         // Fill factory bowls; index zero is reserved for the centre.
         let (bowls, bag) = (&mut self.bowls, &mut self.bag);
-        for bowl in bowls.iter_mut().skip(1) {
+        for bowl_idx in 1..bowls.len() {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
-                // Rebuild the bag from tiles not currently held or placed.
+                // Rebuild the bag from tiles not currently held, placed, or dealt.
                 let mut used_tiles = Vec::new();
                 for board in &self.boards {
                     used_tiles.extend(board.get_active_tiles());
                 }
+                for bowl in bowls.iter() {
+                    used_tiles.extend(bowl.tiles().iter().copied());
+                }
+                used_tiles.extend(next.iter().copied());
                 let mut unused_tiles = Vec::new();
                 for t in 0..BOARD_DIMENSION {
                     unused_tiles.append(&mut vec![
@@ -208,10 +234,11 @@ impl GameState {
                                 .count()
                     ]);
                 }
+                self.discarded_tiles = self.discarded_tiles.saturating_sub(unused_tiles.len());
                 bag.restock(unused_tiles, &mut self.rng);
             }
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
-            bowl.fill(next.clone());
+            bowls[bowl_idx].fill(next);
         }
 
         // The first-player-token owner starts the new round.

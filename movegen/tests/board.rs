@@ -14,6 +14,7 @@ fn default_board_has_empty_state() {
     assert_eq!(board.bonuses().columns, [false; BOARD_DIMENSION]);
     assert_eq!(board.bonuses().tile_types, [false; BOARD_DIMENSION]);
     assert_eq!(*board.penalties(), 0);
+    assert_eq!(*board.penalty_tiles(), 0);
     assert_eq!(*board.score(), 0);
 }
 
@@ -43,6 +44,7 @@ fn builder_sets_all_board_fields() {
     assert_eq!(board.bonuses().columns, bonuses.columns);
     assert_eq!(board.bonuses().tile_types, bonuses.tile_types);
     assert_eq!(*board.penalties(), 3);
+    assert_eq!(*board.penalty_tiles(), 3);
     assert_eq!(*board.score(), 12);
 }
 
@@ -123,9 +125,35 @@ fn hold_tiles_sends_overflow_and_floor_tiles_to_penalties() {
         vec![Some(1), None, None, None, None]
     );
     assert_eq!(*board.penalties(), 2);
+    assert_eq!(*board.penalty_tiles(), 2);
 
     board.hold_tiles(4, 3, Row::Floor, 0).unwrap();
     assert_eq!(*board.penalties(), 5);
+    assert_eq!(*board.penalty_tiles(), 5);
+}
+
+#[test]
+fn hold_tiles_fills_empty_slots_in_partially_filled_lines() {
+    let mut board = Board::default();
+
+    board.hold_tiles(2, 1, Row::Wall(2), 0).unwrap();
+    board.hold_tiles(2, 2, Row::Wall(2), 0).unwrap();
+
+    assert_eq!(
+        board.holds()[2].to_vec(),
+        vec![Some(2), Some(2), Some(2), None, None]
+    );
+    assert_eq!(*board.penalty_tiles(), 0);
+}
+
+#[test]
+fn place_holds_reports_physical_tiles_but_not_the_first_player_token() {
+    let mut board = Board::default();
+    board.hold_tiles(1, 2, Row::Floor, 1).unwrap();
+
+    assert_eq!(board.place_holds(), 2);
+    assert_eq!(*board.penalties(), 0);
+    assert_eq!(*board.penalty_tiles(), 0);
 }
 
 #[test]
