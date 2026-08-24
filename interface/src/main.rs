@@ -10,8 +10,8 @@
 //! while [`mod@parsing`] handles AzulFEN components and complete game states.
 //!
 //! The executable is currently a development harness: it can spawn configured
-//! child processes and run a local human-input game, but full UAI message
-//! dispatch, tournaments, timing, and recovery are still pending.
+//! child processes, perform the UAI startup sequence, and run a local UAI game
+//! or human-input game. Tournaments, timing, and recovery are still pending.
 
 pub mod format;
 pub mod parsing;
@@ -28,7 +28,7 @@ use rand::{Rng, seq::IndexedRandom};
 use crate::{
     format::ProtocolFormat,
     process::EngineProcess,
-    protocol::{Cli, Protocol},
+    protocol::{Cli, Protocol, play_uai_game, uai_ready},
 };
 
 fn main() {
@@ -55,10 +55,12 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
+    let timeout = Duration::from_secs(cli.timeout as u64);
     for (engine, config) in engines.iter_mut().zip(&cli.engines) {
         if matches!(config.proto, Protocol::UAI) {
             let identity = protocol::uai_handshake(engine, Duration::from_secs(5))
                 .expect("UAI engine handshake failed");
+            uai_ready(engine, timeout).expect("UAI engine readiness check failed");
             println!(
                 "UAI engine: {} by {}",
                 identity.name.as_deref().unwrap_or("<unnamed>"),
@@ -69,12 +71,30 @@ fn main() {
 
     println!("started {} engine process(es)", engines.len());
 
-    let seed = rand::rng().random();
-    let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
-    gamestate.setup_next_round();
-    println!("{}", gamestate.fmt_protocol(Protocol::Human));
-
-    listen_for_input(gamestate, Protocol::Human);
+    let all_uai = cli
+        .engines
+        .iter()
+        .all(|config| matches!(config.proto, Protocol::UAI));
+    if all_uai && (2..=4).contains(&engines.len()) {
+        let seed = cli.seed.unwrap_or_else(|| rand::rng().random());
+        let mut gamestate =
+            GameState::new(engines.len(), seed).expect("supported player count must be valid");
+        gamestate.setup_next_round();
+        match play_uai_game(&mut engines, gamestate, timeout) {
+            Ok(gamestate) => {
+                println!("{}", gamestate.fmt_protocol(Protocol::Human));
+                println!("Game over");
+                println!("Winner: player {}", gamestate.get_winner());
+            }
+            Err(error) => eprintln!("UAI game failed: {error}"),
+        }
+    } else {
+        let seed = cli.seed.unwrap_or_else(|| rand::rng().random());
+        let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
+        gamestate.setup_next_round();
+        println!("{}", gamestate.fmt_protocol(Protocol::Human));
+        listen_for_input(gamestate, Protocol::Human);
+    }
 
     for engine in engines {
         let _ = engine.shutdown(Duration::from_millis(100));

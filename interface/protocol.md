@@ -5,8 +5,9 @@ with engine processes. It follows the shape of the Universal Chess Interface
 (UCI), while using Azul-specific position and move formats.
 
 This document is the project specification for UAI. The executable currently
-contains the configuration, parsing, child-process stream, and UAI handshake
-pieces, while command dispatch remains implementation work.
+contains the configuration, parsing, child-process stream, startup handshake,
+and basic turn-loop pieces. Match scheduling, time controls, and recovery
+remain implementation work.
 
 ## Transport
 
@@ -98,9 +99,9 @@ boards, bowls, bag, active player, first-player-token owner, optional initial
 seed, current xoshiro256++ state, and discarded-tile count. See the
 [`AzulFEN specification`](./azulfen.md) for the grammar and round-trip rules.
 
-The interface must reject malformed or invalid positions before asking an
-engine to search them. An engine should treat a position received through
-`position` as authoritative and should not infer omitted random state.
+The interface rejects malformed or invalid positions before asking an engine to
+search them. The turn loop sends a complete authoritative position before each
+`go` request and validates the returned move against the local state.
 
 ## Errors and termination
 

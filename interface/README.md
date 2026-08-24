@@ -4,11 +4,12 @@ The interface is the command-line harness for running Azul games between
 engines and human players. It accepts engine and match configuration and is
 designed around the [UAI protocol](protocol.md).
 
-The current executable is still a development harness. It parses the options,
-starts configured child processes, manages their standard streams, and runs a
-local human-input game. Match scheduling, UAI command dispatch, time controls,
-persistence, diagnostics, and recovery options are parsed but are not all
-wired into execution yet.
+The current executable parses the options, starts configured child processes,
+manages their standard streams, performs the UAI startup sequence, and runs a
+two-to-four-player UAI game when all configured engines use UAI. It also retains
+a local human-input game. Match scheduling, time controls, persistence,
+diagnostics, and recovery options are parsed but are not all wired into
+execution yet.
 
 ## Quick start
 

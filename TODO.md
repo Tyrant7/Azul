@@ -1,7 +1,7 @@
 # TODO
 
 ## Interface
-- Implement UAI command dispatch, position updates, move requests, quit, and errors
+- Complete UAI command dispatch with time controls, diagnostics, recovery, and tournament integration
 - Implement time controls, deadlines, engine recovery, logging, and resource limits
 - Implement tournament scheduling, concurrency, resumable results, openings, and summaries
 

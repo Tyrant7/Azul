@@ -110,6 +110,28 @@ fn handshake_error(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
+/// Waits for an engine to finish initialization before a game starts.
+pub(crate) fn uai_ready(process: &mut EngineProcess, timeout: Duration) -> io::Result<()> {
+    process.send_line("isready")?;
+    loop {
+        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "engine closed stdout during isready",
+            )
+        })?;
+        if line == "readyok" {
+            return Ok(());
+        }
+        if line.starts_with("error ") {
+            return Err(engine_response_error(line));
+        }
+        return Err(engine_response_error(format!(
+            "unexpected response during isready: {line}"
+        )));
+    }
+}
+
 /// Sends the command that resets an engine's game-specific state.
 pub(crate) fn send_new_game(process: &mut EngineProcess) -> io::Result<()> {
     process.send_line("newgame")
@@ -136,6 +158,73 @@ pub(crate) fn send_position(process: &mut EngineProcess, game: &GameState) -> io
 /// Requests a move from the engine for the current position.
 pub(crate) fn send_go(process: &mut EngineProcess) -> io::Result<()> {
     process.send_line("go")
+}
+
+/// Runs a complete UAI game across one engine process per player.
+pub(crate) fn play_uai_game(
+    processes: &mut [EngineProcess],
+    mut game: GameState,
+    timeout: Duration,
+) -> io::Result<GameState> {
+    if processes.len() != game.boards().len() || !(2..=4).contains(&processes.len()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a UAI game requires one engine for each of two to four players",
+        ));
+    }
+
+    for process in processes.iter_mut() {
+        send_new_game(process)?;
+    }
+
+    while !game.is_game_over() {
+        let active_player = *game.active_player();
+        let process = processes.get_mut(active_player).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "game active player has no matching engine",
+            )
+        })?;
+        send_position(process, &game)?;
+        send_go(process)?;
+        let choice = receive_bestmove(process, timeout)?;
+        game.make_move(&choice).map_err(|_| {
+            engine_response_error(format!(
+                "engine player {active_player} returned an illegal move"
+            ))
+        })?;
+
+        if game.round_over() {
+            game.setup_next_round();
+        }
+    }
+
+    Ok(game)
+}
+
+/// Reads engine output until the next move response, ignoring search updates.
+fn receive_bestmove(process: &mut EngineProcess, timeout: Duration) -> io::Result<Move> {
+    loop {
+        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "engine closed stdout while searching",
+            )
+        })?;
+        if line.starts_with("info ") {
+            continue;
+        }
+        if line.starts_with("error ") {
+            return Err(engine_response_error(line));
+        }
+        return parse_bestmove(&line)
+            .map_err(|_| engine_response_error(format!("invalid bestmove response: {line}")));
+    }
+}
+
+/// Creates an error for a malformed or unusable engine response.
+fn engine_response_error(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 /// Time limit assigned to an engine.
@@ -410,12 +499,12 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, send_go,
-        send_new_game, send_position, uai_handshake,
+        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
+        send_go, send_new_game, send_position, uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::EngineProcess;
-    use azul_movegen::{GameState, Row, game_move::Move};
+    use azul_movegen::{Bag, Board, Bowl, GameState, Row, Tile, game_move::Move};
     use clap::Parser;
     use std::{io::ErrorKind, process::Command, time::Duration};
 
@@ -599,6 +688,76 @@ mod tests {
 
         let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
         let error = uai_handshake(&mut process, Duration::from_secs(1)).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn uai_ready_waits_for_readyok() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo readyok";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf 'readyok\\n'";
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        uai_ready(&mut process, Duration::from_secs(1)).unwrap();
+    }
+
+    #[test]
+    fn play_uai_game_dispatches_turns_and_applies_bestmove() {
+        #[cfg(windows)]
+        let active_script = "set /p line=& echo info depth 1& echo bestmove 010401& set /p line=& ping -n 2 127.0.0.1 > nul";
+        #[cfg(not(windows))]
+        let active_script =
+            "IFS= read line; printf 'info depth 1\\nbestmove 010401\\n'; IFS= read line; sleep 2";
+        #[cfg(windows)]
+        let waiting_script = "set /p line=";
+        #[cfg(not(windows))]
+        let waiting_script = "IFS= read line; sleep 2";
+
+        let board = Board::builder()
+            .placed([
+                [Some(0), Some(1), Some(2), Some(3), None],
+                [None; 5],
+                [None; 5],
+                [None; 5],
+                [None; 5],
+            ])
+            .build();
+        let mut bowls = vec![Bowl::default(); 6];
+        bowls[1].fill(vec![4 as Tile]);
+        let game = GameState::builder()
+            .boards(vec![board, Board::default()])
+            .bowls(bowls)
+            .bag(Bag::default())
+            .set_seed(42)
+            .build()
+            .unwrap();
+
+        let mut processes = vec![
+            EngineProcess::spawn(&mut fixture(active_script)).unwrap(),
+            EngineProcess::spawn(&mut fixture(waiting_script)).unwrap(),
+        ];
+        let game = play_uai_game(&mut processes, game, Duration::from_secs(1)).unwrap();
+
+        assert!(game.is_game_over());
+        assert_eq!(game.get_winner(), 0);
+        assert_eq!(game.boards()[0].count_horizontal_lines(), 1);
+    }
+
+    #[test]
+    fn play_uai_game_rejects_an_illegal_bestmove() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo bestmove 990499& set /p line=& ping -n 2 127.0.0.1 > nul";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf 'bestmove 990499\\n'; IFS= read line; sleep 2";
+
+        let game = GameState::new(2, 42).unwrap();
+        let mut processes = vec![
+            EngineProcess::spawn(&mut fixture(script)).unwrap(),
+            EngineProcess::spawn(&mut fixture("sleep 2")).unwrap(),
+        ];
+        let error = play_uai_game(&mut processes, game, Duration::from_secs(1)).unwrap_err();
 
         assert_eq!(error.kind(), ErrorKind::InvalidData);
     }
