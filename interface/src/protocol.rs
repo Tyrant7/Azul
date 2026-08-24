@@ -1,7 +1,8 @@
 //! Command-line configuration, protocol modes, and move parsing.
 
+use crate::parsing::ToAzulFEN;
 use crate::process::EngineProcess;
-use azul_movegen::{Row, Tile, game_move::Move};
+use azul_movegen::{GameState, Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
 use std::{io, num::ParseIntError, time::Duration};
 
@@ -107,6 +108,34 @@ pub(crate) fn uai_handshake(
 /// Creates a protocol error with a stable error category for callers.
 fn handshake_error(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
+
+/// Sends the command that resets an engine's game-specific state.
+pub(crate) fn send_new_game(process: &mut EngineProcess) -> io::Result<()> {
+    process.send_line("newgame")
+}
+
+/// Sends the complete current position to an engine as AzulFEN.
+pub(crate) fn send_position(process: &mut EngineProcess, game: &GameState) -> io::Result<()> {
+    let fen = game.to_azul_fen();
+    let fen = fen.strip_suffix('\n').ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "AzulFEN position is missing its final newline",
+        )
+    })?;
+    if fen.contains(['\r', '\n']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "AzulFEN position contains an embedded newline",
+        ));
+    }
+    process.send_line(&format!("position fen {fen}"))
+}
+
+/// Requests a move from the engine for the current position.
+pub(crate) fn send_go(process: &mut EngineProcess) -> io::Result<()> {
+    process.send_line("go")
 }
 
 /// Time limit assigned to an engine.
@@ -363,11 +392,30 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     })
 }
 
+/// Indicates that an engine's `bestmove` response could not be parsed.
+#[derive(Debug)]
+pub struct ParseBestMoveError;
+
+/// Parses a strict `bestmove <move>` engine response.
+///
+/// The response must contain exactly one six-digit move payload. Move legality
+/// is checked separately by [`azul_movegen::GameState::make_move`].
+pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
+    let move_text = response
+        .strip_prefix("bestmove ")
+        .ok_or(ParseBestMoveError)?;
+    parse_move(move_text).map_err(|_| ParseBestMoveError)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Protocol, TimeControl, parse_engine, parse_move, uai_handshake};
+    use super::{
+        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, send_go,
+        send_new_game, send_position, uai_handshake,
+    };
+    use crate::parsing::ToAzulFEN;
     use crate::process::EngineProcess;
-    use azul_movegen::{Row, game_move::Move};
+    use azul_movegen::{GameState, Row, game_move::Move};
     use clap::Parser;
     use std::{io::ErrorKind, process::Command, time::Duration};
 
@@ -491,6 +539,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_bestmove_decodes_the_move_payload() {
+        assert_eq!(
+            parse_bestmove("bestmove 040102").unwrap(),
+            Move {
+                bowl: 4,
+                tile_type: 1,
+                row: Row::Wall(1),
+            }
+        );
+        assert_eq!(
+            parse_bestmove("bestmove 000000").unwrap(),
+            Move {
+                bowl: 0,
+                tile_type: 0,
+                row: Row::Floor,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_bestmove_rejects_noncanonical_responses() {
+        for response in [
+            "bestmove",
+            "bestmove ",
+            "bestmove 04010a",
+            "bestmove 040102 extra",
+            "move 040102",
+            " bestmove 040102",
+        ] {
+            assert!(
+                parse_bestmove(response).is_err(),
+                "accepted response {response:?}"
+            );
+        }
+    }
+
+    #[test]
     fn uai_handshake_collects_identity_and_options() {
         #[cfg(windows)]
         let script = "set /p line=& echo id name TestEngine& echo id author TestAuthor& echo option name Skill type spin default 5& echo uaiok";
@@ -516,5 +601,39 @@ mod tests {
         let error = uai_handshake(&mut process, Duration::from_secs(1)).unwrap_err();
 
         assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn sends_new_game_position_and_go_commands() {
+        #[cfg(windows)]
+        let script = "set /p line=& echo !line!";
+        #[cfg(not(windows))]
+        let script = "IFS= read line; printf '%s\\n' \"$line\"";
+
+        let mut game = GameState::new(2, 42).unwrap();
+        game.setup_next_round();
+        let expected_fen = game.to_azul_fen();
+        let expected_fen = expected_fen.strip_suffix('\n').unwrap();
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        send_new_game(&mut process).unwrap();
+        assert_eq!(
+            process.recv_stdout(Duration::from_secs(1)).unwrap(),
+            Some(String::from("newgame"))
+        );
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        send_position(&mut process, &game).unwrap();
+        assert_eq!(
+            process.recv_stdout(Duration::from_secs(1)).unwrap(),
+            Some(format!("position fen {expected_fen}"))
+        );
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        send_go(&mut process).unwrap();
+        assert_eq!(
+            process.recv_stdout(Duration::from_secs(1)).unwrap(),
+            Some(String::from("go"))
+        );
     }
 }
