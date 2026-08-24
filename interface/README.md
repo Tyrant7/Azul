@@ -71,7 +71,7 @@ both `tc` and `st` reject the command line.
 | `--seed` | unsigned `N` | Seed for reproducible tournament randomness. |
 | `--openings` | `PATH` | Load starting positions or an opening book. |
 | `--swap` | flag | Balance which engine receives each starting side. |
-| `--timeout` | `N`, default `10` | Timeout value used for engine responses; the runtime unit is currently defined by the future process-management implementation. |
+| `--timeout` | `N`, default `10` | Startup handshake/readiness timeout in seconds. Move deadlines come from each engine's `tc` or `st` setting. |
 | `--recover` | flag | Restart a crashed engine instead of immediately forfeiting. |
 
 ## Diagnostics and logging options

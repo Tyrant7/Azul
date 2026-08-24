@@ -10,8 +10,9 @@
 //! while [`mod@parsing`] handles AzulFEN components and complete game states.
 //!
 //! The executable is currently a development harness: it can spawn configured
-//! child processes, perform the UAI startup sequence, and run a local UAI game
-//! or human-input game. Tournaments, timing, and recovery are still pending.
+//! child processes, perform the UAI startup sequence, enforce per-engine time
+//! controls, and run a local UAI game or human-input game. Tournaments and
+//! recovery are still pending.
 
 pub mod format;
 pub mod parsing;
@@ -55,12 +56,12 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let timeout = Duration::from_secs(cli.timeout as u64);
+    let startup_timeout = Duration::from_secs(cli.timeout as u64);
     for (engine, config) in engines.iter_mut().zip(&cli.engines) {
         if matches!(config.proto, Protocol::UAI) {
-            let identity = protocol::uai_handshake(engine, Duration::from_secs(5))
+            let identity = protocol::uai_handshake(engine, startup_timeout)
                 .expect("UAI engine handshake failed");
-            uai_ready(engine, timeout).expect("UAI engine readiness check failed");
+            uai_ready(engine, startup_timeout).expect("UAI engine readiness check failed");
             println!(
                 "UAI engine: {} by {}",
                 identity.name.as_deref().unwrap_or("<unnamed>"),
@@ -80,7 +81,17 @@ fn main() {
         let mut gamestate =
             GameState::new(engines.len(), seed).expect("supported player count must be valid");
         gamestate.setup_next_round();
-        match play_uai_game(&mut engines, gamestate, timeout) {
+        let time_controls = cli
+            .engines
+            .iter()
+            .map(|config| {
+                config
+                    .tc
+                    .clone()
+                    .expect("engine time control must be configured")
+            })
+            .collect::<Vec<_>>();
+        match play_uai_game(&mut engines, gamestate, &time_controls) {
             Ok(gamestate) => {
                 println!("{}", gamestate.fmt_protocol(Protocol::Human));
                 println!("Game over");

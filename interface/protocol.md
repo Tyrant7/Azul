@@ -30,7 +30,8 @@ The interface and engine use the following lifecycle:
 3. The interface sends `isready` and waits for `readyok` before starting a
    game.
 4. The interface sends `newgame`, followed by a `position` command.
-5. The interface sends `go` when it is the engine's turn.
+5. The interface sends `go movetime <milliseconds>` when it is the engine's
+   turn, using the player's current time budget.
 6. The engine responds with `bestmove` and may send `info` lines first.
 7. The interface sends another `position`/`go` pair, or sends `quit` to end
    the process.
@@ -48,7 +49,7 @@ An engine must finish any outstanding work before replying to `isready`.
 | `position startpos` | Yes | Loads the standard empty Azul position. |
 | `position fen <AzulFEN>` | Yes | Loads the position encoded by [`azulfen.md`](./azulfen.md). |
 | `go` | Yes | Requests a move for the active player. |
-| `go movetime <milliseconds>` | Yes | Requests a move with a fixed time budget. |
+| `go movetime <milliseconds>` | Yes | Requests a move with a fixed millisecond budget. |
 | `go wtime <milliseconds> btime <milliseconds>` | Planned | Supplies remaining clocks for the two sides. |
 | `stop` | Planned | Stops an in-progress search; the engine must still return `bestmove`. |
 | `quit` | Yes | Requests process termination. |
@@ -119,6 +120,13 @@ The interface rejects malformed or invalid positions before asking an engine to
 search them. The turn loop sends a complete authoritative position before each
 `go` request and validates the returned move against the local state.
 
+For a fixed per-move control (`st`), the interface sends that value as the
+`movetime` budget on every turn. For an increment control (`tc=BASE+INC`), it
+starts the player's clock at `BASE` seconds, sends the current remaining clock
+as the `movetime` budget, subtracts the elapsed search time, and adds `INC`
+seconds after a successful move. A response that arrives after the deadline is
+a timeout, and `info` lines do not extend that deadline.
+
 ## Errors and termination
 
 Errors are single-line responses:
@@ -130,7 +138,9 @@ error <human-readable explanation>
 Errors should identify the command or field that failed without exposing stack
 traces or other diagnostic output on standard output. Fatal transport errors,
 engine crashes, and timeouts are managed by the interface process and are not
-recovered through an `error` response.
+recovered through an `error` response. The interface's `--timeout` setting is
+used for startup handshake/readiness waits; move deadlines come from the
+configured engine time control.
 
 ## Compatibility
 

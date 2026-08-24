@@ -4,7 +4,11 @@ use crate::parsing::ToAzulFEN;
 use crate::process::EngineProcess;
 use azul_movegen::{GameState, Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
-use std::{io, num::ParseIntError, time::Duration};
+use std::{
+    io,
+    num::ParseIntError,
+    time::{Duration, Instant},
+};
 
 /// Configuration for one engine participating in a match.
 #[derive(Debug, Clone)]
@@ -160,18 +164,67 @@ pub(crate) fn send_go(process: &mut EngineProcess) -> io::Result<()> {
     process.send_line("go")
 }
 
+/// Requests a move with a fixed millisecond budget.
+pub(crate) fn send_go_movetime(process: &mut EngineProcess, budget: Duration) -> io::Result<()> {
+    process.send_line(&format!("go movetime {}", budget.as_millis()))
+}
+
+/// Tracks one player's configured clock across turns.
+#[derive(Debug, Clone)]
+struct PlayerClock {
+    control: TimeControl,
+    remaining: Duration,
+}
+
+impl PlayerClock {
+    /// Creates a clock initialized from its time-control configuration.
+    fn new(control: TimeControl) -> Self {
+        let remaining = match &control {
+            TimeControl::Increment(base, _) => Duration::from_secs(*base as u64),
+            TimeControl::Fixed(milliseconds) => Duration::from_millis(*milliseconds as u64),
+        };
+        Self { control, remaining }
+    }
+
+    /// Returns the maximum duration allowed for the next move.
+    fn move_budget(&self) -> Duration {
+        self.remaining
+    }
+
+    /// Applies elapsed time and any configured increment after a move.
+    fn finish_move(&mut self, elapsed: Duration) -> io::Result<()> {
+        if elapsed > self.remaining {
+            return Err(timeout_error("engine exceeded its time control"));
+        }
+
+        if let TimeControl::Increment(_, increment) = &self.control {
+            self.remaining = self.remaining - elapsed + Duration::from_secs(*increment as u64);
+        }
+        Ok(())
+    }
+}
+
 /// Runs a complete UAI game across one engine process per player.
 pub(crate) fn play_uai_game(
     processes: &mut [EngineProcess],
     mut game: GameState,
-    timeout: Duration,
+    time_controls: &[TimeControl],
 ) -> io::Result<GameState> {
-    if processes.len() != game.boards().len() || !(2..=4).contains(&processes.len()) {
+    if processes.len() != game.boards().len()
+        || processes.len() != time_controls.len()
+        || !(2..=4).contains(&processes.len())
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "a UAI game requires one engine for each of two to four players",
+            "a UAI game requires one time control and engine for each of two to four players",
         ));
     }
+
+    let mut clocks = time_controls
+        .iter()
+        .cloned()
+        .map(PlayerClock::new)
+        .collect::<Vec<_>>();
 
     for process in processes.iter_mut() {
         send_new_game(process)?;
@@ -179,6 +232,10 @@ pub(crate) fn play_uai_game(
 
     while !game.is_game_over() {
         let active_player = *game.active_player();
+        let budget = clocks[active_player].move_budget();
+        if budget.is_zero() {
+            return Err(timeout_error("engine has no time remaining"));
+        }
         let process = processes.get_mut(active_player).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -186,8 +243,10 @@ pub(crate) fn play_uai_game(
             )
         })?;
         send_position(process, &game)?;
-        send_go(process)?;
-        let choice = receive_bestmove(process, timeout)?;
+        send_go_movetime(process, budget)?;
+        let started = Instant::now();
+        let choice = receive_bestmove(process, started + budget)?;
+        clocks[active_player].finish_move(started.elapsed())?;
         game.make_move(&choice).map_err(|_| {
             engine_response_error(format!(
                 "engine player {active_player} returned an illegal move"
@@ -203,8 +262,9 @@ pub(crate) fn play_uai_game(
 }
 
 /// Reads engine output until the next move response, ignoring search updates.
-fn receive_bestmove(process: &mut EngineProcess, timeout: Duration) -> io::Result<Move> {
+fn receive_bestmove(process: &mut EngineProcess, deadline: Instant) -> io::Result<Move> {
     loop {
+        let timeout = deadline.saturating_duration_since(Instant::now());
         let line = process.recv_stdout(timeout)?.ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::UnexpectedEof,
@@ -217,9 +277,18 @@ fn receive_bestmove(process: &mut EngineProcess, timeout: Duration) -> io::Resul
         if line.starts_with("error ") {
             return Err(engine_response_error(line));
         }
-        return parse_bestmove(&line)
-            .map_err(|_| engine_response_error(format!("invalid bestmove response: {line}")));
+        let move_choice = parse_bestmove(&line)
+            .map_err(|_| engine_response_error(format!("invalid bestmove response: {line}")))?;
+        if Instant::now() > deadline {
+            return Err(timeout_error("engine exceeded its time control"));
+        }
+        return Ok(move_choice);
     }
+}
+
+/// Creates a stable timeout error for a player that used too much time.
+fn timeout_error(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, message.into())
 }
 
 /// Creates an error for a malformed or unusable engine response.
@@ -500,7 +569,7 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 mod tests {
     use super::{
         Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
-        send_go, send_new_game, send_position, uai_handshake, uai_ready,
+        send_go, send_go_movetime, send_new_game, send_position, uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::EngineProcess;
@@ -704,6 +773,24 @@ mod tests {
     }
 
     #[test]
+    fn player_clock_adds_increment_after_each_move() {
+        let mut clock = super::PlayerClock::new(TimeControl::Increment(60, 5));
+
+        assert_eq!(clock.move_budget(), Duration::from_secs(60));
+        clock.finish_move(Duration::from_secs(2)).unwrap();
+        assert_eq!(clock.move_budget(), Duration::from_secs(63));
+    }
+
+    #[test]
+    fn player_clock_rejects_elapsed_time_beyond_the_budget() {
+        let mut clock = super::PlayerClock::new(TimeControl::Fixed(10));
+
+        let error = clock.finish_move(Duration::from_millis(11)).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+    }
+
+    #[test]
     fn play_uai_game_dispatches_turns_and_applies_bestmove() {
         #[cfg(windows)]
         let active_script = "set /p line=& echo info depth 1& echo bestmove 010401& set /p line=& ping -n 2 127.0.0.1 > nul";
@@ -738,7 +825,8 @@ mod tests {
             EngineProcess::spawn(&mut fixture(active_script)).unwrap(),
             EngineProcess::spawn(&mut fixture(waiting_script)).unwrap(),
         ];
-        let game = play_uai_game(&mut processes, game, Duration::from_secs(1)).unwrap();
+        let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
+        let game = play_uai_game(&mut processes, game, &controls).unwrap();
 
         assert!(game.is_game_over());
         assert_eq!(game.get_winner(), 0);
@@ -757,9 +845,28 @@ mod tests {
             EngineProcess::spawn(&mut fixture(script)).unwrap(),
             EngineProcess::spawn(&mut fixture("sleep 2")).unwrap(),
         ];
-        let error = play_uai_game(&mut processes, game, Duration::from_secs(1)).unwrap_err();
+        let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
+        let error = play_uai_game(&mut processes, game, &controls).unwrap_err();
 
         assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn play_uai_game_enforces_the_move_deadline() {
+        #[cfg(windows)]
+        let slow_script = "set /p line=& ping -n 3 127.0.0.1 > nul& echo bestmove 010401";
+        #[cfg(not(windows))]
+        let slow_script = "IFS= read line; sleep 1; printf 'bestmove 010401\\n'";
+
+        let game = GameState::new(2, 42).unwrap();
+        let mut processes = vec![
+            EngineProcess::spawn(&mut fixture(slow_script)).unwrap(),
+            EngineProcess::spawn(&mut fixture("sleep 2")).unwrap(),
+        ];
+        let controls = [TimeControl::Fixed(10), TimeControl::Fixed(10)];
+        let error = play_uai_game(&mut processes, game, &controls).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
     }
 
     #[test]
@@ -793,6 +900,13 @@ mod tests {
         assert_eq!(
             process.recv_stdout(Duration::from_secs(1)).unwrap(),
             Some(String::from("go"))
+        );
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        send_go_movetime(&mut process, Duration::from_millis(500)).unwrap();
+        assert_eq!(
+            process.recv_stdout(Duration::from_secs(1)).unwrap(),
+            Some(String::from("go movetime 500"))
         );
     }
 }
