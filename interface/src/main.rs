@@ -34,7 +34,9 @@ use crate::{
 
 fn main() {
     let cli = Cli::parse();
-    println!("{:#?}", cli);
+    if !cli.quiet {
+        println!("{:#?}", cli);
+    }
 
     // Spawn configured engines; protocol dispatch remains separate from the human loop.
 
@@ -64,11 +66,13 @@ fn main() {
                     .and_then(|identity| uai_ready(engine, startup_timeout).map(|_| identity));
                 match startup {
                     Ok(identity) => {
-                        println!(
-                            "UAI engine: {} by {}",
-                            identity.name.as_deref().unwrap_or("<unnamed>"),
-                            identity.author.as_deref().unwrap_or("<unknown author>")
-                        );
+                        if !cli.quiet {
+                            println!(
+                                "UAI engine: {} by {}",
+                                identity.name.as_deref().unwrap_or("<unnamed>"),
+                                identity.author.as_deref().unwrap_or("<unknown author>")
+                            );
+                        }
                         break;
                     }
                     Err(error)
@@ -95,7 +99,9 @@ fn main() {
         }
     }
 
-    println!("started {} engine process(es)", engines.len());
+    if !cli.quiet {
+        println!("started {} engine process(es)", engines.len());
+    }
 
     let all_uai = cli
         .engines
@@ -125,12 +131,16 @@ fn main() {
             startup_timeout,
         ) {
             Ok(GameResult::Completed(gamestate)) => {
-                println!("{}", gamestate.fmt_protocol(Protocol::Human));
+                if !cli.quiet {
+                    println!("{}", gamestate.fmt_protocol(Protocol::Human));
+                }
                 println!("Game over");
                 println!("Winner: player {}", gamestate.get_winner());
             }
             Ok(GameResult::Forfeit { game, failure }) => {
-                println!("{}", game.fmt_protocol(Protocol::Human));
+                if !cli.quiet {
+                    println!("{}", game.fmt_protocol(Protocol::Human));
+                }
                 eprintln!(
                     "Player {} forfeited ({:?}): {}",
                     failure.player, failure.reason, failure.message
@@ -143,8 +153,10 @@ fn main() {
         let seed = cli.seed.unwrap_or_else(|| rand::rng().random());
         let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
         gamestate.setup_next_round();
-        println!("{}", gamestate.fmt_protocol(Protocol::Human));
-        listen_for_input(gamestate, Protocol::Human);
+        if !cli.quiet {
+            println!("{}", gamestate.fmt_protocol(Protocol::Human));
+        }
+        listen_for_input(gamestate, Protocol::Human, cli.quiet);
     }
 
     for engine in engines {
@@ -161,7 +173,7 @@ fn startup_failure_is_recoverable(error: &io::Error) -> bool {
 }
 
 /// Runs the interactive human-input game loop.
-fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
+fn listen_for_input(mut gamestate: GameState, protocol: Protocol, quiet: bool) {
     loop {
         let mut input = String::new();
         io::stdin()
@@ -171,15 +183,18 @@ fn listen_for_input(mut gamestate: GameState, protocol: Protocol) {
         let choice = match protocol::parse_move(input) {
             Ok(m) => m,
             Err(e) => {
-                println!("Invalid move: {:?}", e);
+                eprintln!("Invalid move: {:?}", e);
                 continue;
             }
         };
-        println!("move: {:?}", choice);
+        if !quiet {
+            println!("move: {:?}", choice);
+        }
 
         match gamestate.make_move(&choice) {
-            Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
+            Err(_) => eprintln!("Illegal move"),
+            Ok(_) if !quiet => println!("{}", gamestate.fmt_protocol(protocol)),
+            Ok(_) => {}
         };
 
         if gamestate.round_over() {
