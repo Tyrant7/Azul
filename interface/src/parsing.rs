@@ -9,18 +9,22 @@ use crate::format::ProtocolFormat;
 #[derive(Debug)]
 pub struct ParseGameStateError;
 
+/// Constructs a value from an AzulFEN string or component.
 pub trait FromAzulFEN: Sized {
+    /// Parses an AzulFEN representation.
     fn from_azul_fen(fen: &str) -> Result<Self, ParseGameStateError>;
 }
 
+/// Serializes a value to its AzulFEN representation.
 pub trait ToAzulFEN {
+    /// Returns the AzulFEN representation.
     fn to_azul_fen(&self) -> String;
 }
 
 impl FromAzulFEN for Bowl {
     /// Creates a bowl from the given AzulFEN bowl component.
     /// It is important to note that the bowl component is not an entire FEN.
-    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
+    /// See `interface/azulfen.md` in the repository for the format specification.
     fn from_azul_fen(bowl_fen: &str) -> Result<Self, ParseGameStateError> {
         if bowl_fen.chars().nth(0).ok_or(ParseGameStateError)? == '-' {
             Ok(Bowl::default())
@@ -38,7 +42,7 @@ impl FromAzulFEN for Bowl {
 impl FromAzulFEN for Board {
     /// Generates a board matching the given board component of a given AzulFEN.
     /// It is important to note that the board component is not an entire FEN.
-    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
+    /// See `interface/azulfen.md` in the repository for the format specification.
     fn from_azul_fen(board_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut builder = Board::builder();
         let parts: Vec<_> = board_fen.split_whitespace().collect();
@@ -52,7 +56,7 @@ impl FromAzulFEN for Board {
                 score,
                 penalties,
             ] => {
-                // Placed
+                // Decode the wall using run-length counts for empty positions.
                 let mut placed = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
                 let mut y = 0;
                 let mut x = 0;
@@ -70,7 +74,7 @@ impl FromAzulFEN for Board {
                 }
                 builder = builder.placed(placed);
 
-                // Held
+                // Decode each pattern line as a tile type and tile count.
                 let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
                 for (i, h) in held.chars().collect::<Vec<_>>().chunks(2).enumerate() {
                     let tile_type = h[0]
@@ -90,7 +94,7 @@ impl FromAzulFEN for Board {
                 }
                 builder = builder.holds(holds);
 
-                // Bonuses
+                // Decode collected row, column, and tile-type bonuses.
                 builder = builder.bonuses(BonusTypes {
                     rows: bonus_rows
                         .chars()
@@ -112,7 +116,7 @@ impl FromAzulFEN for Board {
                         .or(Err(ParseGameStateError))?,
                 });
 
-                // Score and penalties
+                // Decode the score and stored penalty-tile count.
                 builder = builder.score(score.parse().or(Err(ParseGameStateError))?);
                 builder = builder.penalties(penalties.parse().or(Err(ParseGameStateError))?);
             }
@@ -125,13 +129,13 @@ impl FromAzulFEN for Board {
 impl FromAzulFEN for GameState {
     /// Parses the given AzulFEN into a gamestate.
     /// Will error if the given AzulFEN is invalid.
-    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
+    /// See `interface/azulfen.md` in the repository for the format specification.
     fn from_azul_fen(azul_fen: &str) -> Result<Self, ParseGameStateError> {
         let mut sections = azul_fen.split("| ");
 
         let board_fens = sections.next().ok_or(ParseGameStateError)?.trim();
         let mut board_fens: Vec<_> = board_fens.split(";").map(|f| f.trim()).collect();
-        // Last FEN will always be empty since we split at ";" and each board ends with one
+        // AzulFEN terminates every board component with ';', leaving an empty final component.
         board_fens.pop();
         let board_fens = board_fens;
         let boards = board_fens
@@ -179,27 +183,27 @@ impl FromAzulFEN for GameState {
 
 impl ToAzulFEN for GameState {
     /// Returns the AzulFEN encoding for this game state.
-    /// See the [AzulFEN protocol specification](crate::protocol) for details on the format.
+    /// See `interface/azulfen.md` in the repository for the format specification.
     fn to_azul_fen(&self) -> String {
-        // Boards
+        // Serialize board components.
         let mut azul_fen = String::new();
         for board in self.boards().iter() {
             azul_fen.push_str(&board.fmt_uci_like());
             azul_fen.push(' ');
         }
 
-        // Bowls
+        // Serialize factory bowls and the centre area.
         azul_fen.push_str("| ");
         for bowl in self.bowls().iter() {
             azul_fen.push_str(&bowl.fmt_uci_like());
             azul_fen.push(' ');
         }
 
-        // Bag
+        // Serialize the remaining tile bag.
         azul_fen.push_str("| ");
         azul_fen.push_str(&self.bag().fmt_uci_like());
 
-        // Active player and first player token
+        // Serialize turn and first-player-token metadata.
         azul_fen.push_str(" | ");
         azul_fen.push_str(&self.active_player().to_string());
         azul_fen.push(' ');

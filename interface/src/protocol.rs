@@ -2,6 +2,7 @@ use azul_movegen::{Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
 use std::num::ParseIntError;
 
+/// Configuration for one engine participating in a match.
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
     pub path: String,
@@ -14,35 +15,45 @@ pub struct EngineConfig {
     pub limit_threads: Option<u32>,
 }
 
+/// Output and interaction mode used for an engine.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Protocol {
+    /// Human-readable state and move interaction.
     Human,
+    /// The draft Universal Azul Interface protocol.
     UAI,
 }
 
+/// Time limit assigned to an engine.
 #[derive(Debug, Clone)]
 pub enum TimeControl {
+    /// Base time and per-move increment, expressed in seconds.
     Increment(u32, u32),
+    /// Fixed time per move, expressed in milliseconds.
     Fixed(u32),
 }
 
+/// Tournament pairing strategy.
 #[derive(ValueEnum, Debug, Clone)]
 pub enum TournamentStyle {
+    /// One engine plays a series against each opponent.
     Gauntlet,
+    /// Each engine plays the other engines in scheduled pairings.
     RoundRobin,
+    /// Pairings are assigned by Swiss-style results.
     Swiss,
+    /// Pairings are selected randomly.
     Random,
 }
 
-// Example:
+// Example with two engine configurations:
 // cargo run -p interface -- --engine "path=path tc=60+1" "path=path tc=60+2" --out "path"
 
+/// Command-line configuration for the interface executable.
 #[derive(Parser, Debug)]
 #[command(name = "azul-interface", about = "Manages Azul engine matches")]
 pub struct Cli {
-    // =====================
-    // Engines
-    // =====================
+    // Engine configuration
     #[arg(
         long = "engine", 
         required = true,
@@ -53,9 +64,7 @@ pub struct Cli {
     )]
     pub engines: Vec<EngineConfig>,
 
-    // =====================
-    // Match config
-    // =====================
+    // Match configuration
     #[arg(long, value_enum)]
     pub tournament: Option<TournamentStyle>,
 
@@ -95,9 +104,7 @@ pub struct Cli {
     #[arg(long, action)]
     pub recover: bool,
 
-    // =====================
-    // Debugging and logging
-    // =====================
+    // Diagnostics and logging
     #[arg(long, action)]
     pub version: bool,
 
@@ -200,10 +207,18 @@ impl From<ParseIntError> for ParseMoveError {
 }
 
 /*
-Here we expect moves in the format of `bowl, tile_type, row` where each input is a two-digit number
-ex. 040102 would correspond to the fourth bowl, first tile type, and second row of our own board
-Note: Bowl 00 will always correspond to the centre area, and row 00 will always correspond to the penalty area
+Moves contain three decimal, two-digit components: bowl index, tile type, and destination row.
+For example, 040102 selects tile type 1 from bowl index 4 and sends it to wall row index 1
+(the second wall row). Bowl 00 is the centre area, and row 00 is the floor.
 */
+/// Parses a six-digit move into a [`Move`].
+///
+/// The components are a zero-based bowl index, tile type, and destination row.
+/// Row `00` maps to [`Row::Floor`]; any other row value maps to a zero-based
+/// [`Row::Wall`] index by subtracting one.
+///
+/// This function parses the move's shape and numeric fields only; legality is
+/// checked later by [`azul_movegen::GameState::make_move`].
 pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     if input.len() != 6 {
         return Err(ParseMoveError);

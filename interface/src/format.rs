@@ -2,10 +2,14 @@ use azul_movegen::{Bag, Board, Bowl, GameState, board::BOARD_DIMENSION};
 
 use crate::{parsing::ToAzulFEN, protocol::Protocol};
 
+/// Formats movegen values for human output or the machine-readable protocol.
 pub trait ProtocolFormat {
+    /// Formats the value for a human reader.
     fn fmt_human(&self) -> String;
+    /// Formats the value using the current AzulFEN/UAI-like representation.
     fn fmt_uci_like(&self) -> String;
 
+    /// Selects a formatter based on the requested protocol mode.
     fn fmt_protocol(&self, protocol: Protocol) -> String {
         match protocol {
             Protocol::Human => self.fmt_human(),
@@ -13,12 +17,11 @@ pub trait ProtocolFormat {
         }
     }
 }
-
 impl ProtocolFormat for GameState {
     fn fmt_human(&self) -> String {
         let mut output = String::new();
 
-        // Board printouts
+        // Format player boards and turn information.
         output.push_str(&"-".repeat(20));
         output.push('\n');
         for (i, board) in self.boards().iter().enumerate() {
@@ -37,7 +40,7 @@ impl ProtocolFormat for GameState {
         output.push_str(&"-".repeat(20));
         output.push('\n');
 
-        // Bowl printouts
+        // Format factory bowls and the centre area.
         for (i, bowl) in self.bowls().iter().enumerate() {
             output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
         }
@@ -82,10 +85,10 @@ impl ProtocolFormat for Board {
     }
 
     fn fmt_uci_like(&self) -> String {
-        // Format according to AzulFEN specifications
+        // Format according to the AzulFEN board component specification.
         let mut output = String::new();
 
-        // Placed
+        // Encode placed wall tiles with run-length counts for empty spaces.
         let mut counter = 0;
         for row in self.placed() {
             for tile in row {
@@ -107,7 +110,7 @@ impl ProtocolFormat for Board {
         }
         output.pop();
 
-        // Holds
+        // Encode pattern lines as tile-type/count pairs.
         output.push(' ');
         for row in self.holds() {
             let mut tiles = row.iter().flatten();
@@ -120,7 +123,7 @@ impl ProtocolFormat for Board {
             }
         }
 
-        // Bonuses
+        // Encode collected row, column, and tile-type bonuses.
         output.push(' ');
         for row in self.bonuses().rows {
             output.push_str(&if row { 1 } else { 0 }.to_string());
@@ -134,13 +137,13 @@ impl ProtocolFormat for Board {
             output.push_str(&if tile_type { 1 } else { 0 }.to_string());
         }
 
-        // Score and penalties
+        // Encode score and penalty-tile count.
         output.push(' ');
         output.push_str(&self.score().to_string());
         output.push(' ');
         output.push_str(&self.penalties().to_string());
 
-        // End marker
+        // Terminate the board component.
         output.push_str(" ;");
         output
     }
@@ -171,18 +174,3 @@ where
         self.items().iter().map(|t| t.to_string()).collect()
     }
 }
-
-/*
-impl std::fmt::Display for Row {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match &self {
-                Row::Floor => "-".to_string(),
-                Row::Wall(i) => i.to_string(),
-            }
-        )
-    }
-}
-*/

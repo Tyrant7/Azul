@@ -6,8 +6,8 @@
 //! by the current UAI draft.
 //!
 //! The [`protocol`] module owns CLI configuration, protocol and time-control
-//! types, and move parsing. The [`format`] module renders movegen values, while
-//! [`parsing`] handles AzulFEN components and complete game states.
+//! types, and move parsing. The [`mod@format`] module renders movegen values,
+//! while [`mod@parsing`] handles AzulFEN components and complete game states.
 //!
 //! The executable is currently a development harness: it can spawn configured
 //! child processes and run a local human-input game, but full UAI message
@@ -35,7 +35,7 @@ fn main() {
     let cli = Cli::parse();
     println!("{:#?}", cli);
 
-    // TODO: Figure out how to start an engine as a child process from here
+    // Spawn configured engines; their I/O is not yet connected to the game loop.
 
     let engines = cli
         .engines
