@@ -252,16 +252,16 @@ impl GameState {
     /// penalties. An empty bowl contributes no moves.
     pub fn get_valid_moves(&self) -> Vec<Move> {
         let board = self.boards.get(self.active_player).expect("Invalid player");
-        let mut moves = Vec::new();
+        let mut moves = Vec::with_capacity(self.bowls.len() * BOARD_DIMENSION);
         for (bowl_idx, bowl) in self.bowls.iter().enumerate() {
             for tile in bowl.get_tile_types() {
-                for row in board.get_valid_rows_for_tile_type(tile) {
+                board.for_each_valid_row_for_tile_type(tile, |row| {
                     moves.push(Move {
                         bowl: bowl_idx,
                         tile_type: tile,
                         row,
-                    });
-                }
+                    })
+                });
             }
         }
         moves

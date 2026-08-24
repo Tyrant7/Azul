@@ -60,7 +60,17 @@ impl Board {
     /// A wall row is valid when its pattern line is empty or already holds the
     /// requested type and the corresponding wall position lacks that type.
     pub fn get_valid_rows_for_tile_type(&self, tile_type: Tile) -> Vec<Row> {
-        let mut valid_rows = Vec::new();
+        let mut valid_rows = Vec::with_capacity(BOARD_DIMENSION + 1);
+        self.for_each_valid_row_for_tile_type(tile_type, |row| valid_rows.push(row));
+        valid_rows
+    }
+
+    /// Calls `visit` for every valid destination for `tile_type`.
+    pub(crate) fn for_each_valid_row_for_tile_type(
+        &self,
+        tile_type: Tile,
+        mut visit: impl FnMut(Row),
+    ) {
         for (row_idx, hold) in self.holds.iter().enumerate() {
             // A pattern line cannot mix tile types.
             if hold.iter().any(|t| t.is_some_and(|x| x != tile_type)) {
@@ -81,11 +91,10 @@ impl Board {
             {
                 continue;
             }
-            valid_rows.push(Row::Wall(row_idx));
+            visit(Row::Wall(row_idx));
         }
         // The floor is always available, even when a wall row is legal.
-        valid_rows.push(Row::Floor);
-        valid_rows
+        visit(Row::Floor);
     }
 
     /// Adds `tile_count` tiles of `tile_type` to a pattern line or the floor.

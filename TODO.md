@@ -1,8 +1,5 @@
 # TODO
 
-## Movegen
-- Add efficient legal-move generation and avoid unnecessary allocations where profiling supports it
-
 ## Interface
 - Use a custom markdown file for UAI
   - Once complete, change the links in the docstrings and review that
