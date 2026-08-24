@@ -1,7 +1,6 @@
 # TODO
 
 ## Movegen
-- Finish README file
 - Add efficient legal-move generation and avoid unnecessary allocations where profiling supports it
 
 ## Interface
