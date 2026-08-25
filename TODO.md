@@ -13,7 +13,7 @@
   - Extend recovery coverage across startup failures, crashes, EOF, broken pipes, and repeated restart exhaustion.
   - Add structured command/response logging with engine identity, player, game, turn, timestamps, and redaction rules for sensitive paths or arguments.
   - Wire `--debug`, `--log`, `--stderr`, and `--quiet` to the same diagnostics pipeline without contaminating protocol stdout.
-  - Apply `limit_mem` and `limit_threads` where supported, report unsupported limits clearly, and test configuration validation before process launch.
+  - Extend platform resource-limit tests to cover descendant processes, restart inheritance, and resource-limit forfeit reporting.
 
 - Implement tournament scheduling, concurrency, resumable results, openings, and summaries
   - Convert engine configurations into deterministic pairings for gauntlet, round-robin, Swiss, and random styles.

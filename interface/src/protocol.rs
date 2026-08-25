@@ -25,10 +25,10 @@ pub struct EngineConfig {
     pub args: Option<String>,
     /// Optional display name for the engine.
     pub name: Option<String>,
-    /// Optional per-engine memory limit value.
+    /// Optional per-engine memory limit in mebibytes.
     pub limit_mem: Option<u64>,
-    /// Optional per-engine thread limit.
-    pub limit_threads: Option<u32>,
+    /// Per-engine thread limit, defaulting to one.
+    pub limit_threads: u32,
 }
 
 /// Output and interaction mode used for an engine.
@@ -219,6 +219,8 @@ pub(crate) enum EngineFailureKind {
     MalformedResponse,
     /// The engine returned a syntactically valid but illegal move.
     IllegalMove,
+    /// The operating system terminated the engine for exceeding a limit.
+    ResourceLimit,
 }
 
 impl EngineFailureKind {
@@ -489,6 +491,9 @@ fn transport_failure_at(context: &str, error: io::Error) -> EngineTurnFailure {
     let kind = match error.kind() {
         io::ErrorKind::TimedOut => EngineFailureKind::Timeout,
         io::ErrorKind::BrokenPipe => EngineFailureKind::BrokenPipe,
+        io::ErrorKind::Other if error.to_string().contains("resource limit") => {
+            EngineFailureKind::ResourceLimit
+        }
         _ => EngineFailureKind::Crash,
     };
     EngineTurnFailure::new(kind, format!("{context}: {error}"))
@@ -674,7 +679,7 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
         args: None,
         name: None,
         limit_mem: None,
-        limit_threads: None,
+        limit_threads: 1,
     };
 
     for part in s.split_whitespace() {
@@ -718,10 +723,20 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
             "args" => config.args = Some(val.to_string()),
             "name" => config.name = Some(val.to_string()),
             "limit_mem" => {
-                config.limit_mem = Some(val.parse().map_err(|_| "Invalid memory limit")?)
+                let limit = val
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid memory limit in MiB")?;
+                if limit == 0 {
+                    return Err("Memory limit must be greater than zero MiB".to_string());
+                }
+                config.limit_mem = Some(limit);
             }
             "limit_threads" => {
-                config.limit_threads = Some(val.parse().map_err(|_| "Invalid thread limit")?)
+                let limit = val.parse::<u32>().map_err(|_| "Invalid thread limit")?;
+                if limit == 0 {
+                    return Err("Thread limit must be greater than zero".to_string());
+                }
+                config.limit_threads = limit;
             }
             _ => return Err(format!("Unknown engine key: {}", key)),
         };
@@ -876,7 +891,7 @@ mod tests {
         assert_eq!(config.args.as_deref(), Some("--seed"));
         assert_eq!(config.name.as_deref(), Some("Test"));
         assert_eq!(config.limit_mem, Some(1024));
-        assert_eq!(config.limit_threads, Some(4));
+        assert_eq!(config.limit_threads, 4);
     }
 
     #[test]
@@ -899,11 +914,21 @@ mod tests {
             "path=engine tc=60 st=500",
             "path=engine tc=bad",
             "path=engine tc=60 limit_mem=bad",
+            "path=engine tc=60 limit_mem=0",
             "path=engine tc=60 limit_threads=bad",
+            "path=engine tc=60 limit_threads=0",
             "path=engine tc=60 unknown=value",
         ] {
             assert!(parse_engine(descriptor).is_err(), "accepted {descriptor}");
         }
+    }
+
+    #[test]
+    fn parse_engine_defaults_to_one_thread() {
+        let config = parse_engine("path=engine tc=60").unwrap();
+
+        assert_eq!(config.limit_mem, None);
+        assert_eq!(config.limit_threads, 1);
     }
 
     #[test]

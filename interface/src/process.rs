@@ -14,6 +14,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::resource::{ProcessLimits, ResourceGuard};
+
 /// Owns one engine process and its protocol and diagnostic streams.
 pub(crate) struct EngineProcess {
     child: Child,
@@ -24,6 +26,7 @@ pub(crate) struct EngineProcess {
     stderr_thread: Option<JoinHandle<()>>,
     diagnostics: Option<Arc<ProcessDiagnostics>>,
     engine_index: usize,
+    resources: ResourceGuard,
 }
 
 /// Shares engine stream logging and optional stderr display across processes.
@@ -76,6 +79,7 @@ pub(crate) struct EngineLaunch {
     program: OsString,
     args: Vec<OsString>,
     current_dir: Option<PathBuf>,
+    limits: ProcessLimits,
 }
 
 impl EngineLaunch {
@@ -85,7 +89,14 @@ impl EngineLaunch {
             program: program.into(),
             args: args.into_iter().map(OsString::from).collect(),
             current_dir: current_dir.map(PathBuf::from),
+            limits: ProcessLimits::unrestricted(),
         }
+    }
+
+    /// Adds validated per-process memory and thread limits to this launch.
+    pub(crate) fn with_limits(mut self, memory_mib: Option<u64>, threads: u32) -> io::Result<Self> {
+        self.limits = ProcessLimits::from_config(memory_mib, threads)?;
+        Ok(self)
     }
 
     /// Builds a command for a fresh engine process.
@@ -130,6 +141,7 @@ impl EngineProcess {
             stderr_thread: Some(stderr_thread),
             diagnostics: None,
             engine_index: 0,
+            resources: ResourceGuard::none_for_process(),
         })
     }
 
@@ -146,7 +158,24 @@ impl EngineProcess {
     /// Starts an engine from a reusable launch specification.
     pub(crate) fn spawn_launch(launch: &EngineLaunch) -> io::Result<Self> {
         let mut command = launch.command();
-        Self::spawn(&mut command)
+        launch.limits.configure_command(&mut command)?;
+        Self::spawn_with_limits(&mut command, launch.limits)
+    }
+
+    /// Starts a process and attaches the requested resource enforcement.
+    fn spawn_with_limits(command: &mut Command, limits: ProcessLimits) -> io::Result<Self> {
+        let mut process = Self::spawn(command)?;
+        match limits.attach(&process.child) {
+            Ok(resources) => {
+                process.resources = resources;
+                Ok(process)
+            }
+            Err(error) => {
+                let _ = process.child.kill();
+                let _ = process.child.wait();
+                Err(error)
+            }
+        }
     }
 
     /// Replaces this process with a freshly spawned instance.
@@ -196,7 +225,13 @@ impl EngineProcess {
                 diagnostics.record(self.engine_index, "stdout", line)?;
             }
         }
-        result
+        match result? {
+            Some(line) => Ok(Some(line)),
+            None if self.resources.violated() => Err(io::Error::other(
+                "engine exceeded its memory or thread limit",
+            )),
+            None => Ok(None),
+        }
     }
 
     /// Reads one diagnostic line from stderr, waiting up to `timeout`.
@@ -268,6 +303,7 @@ impl Drop for EngineProcess {
         if let Some(thread) = self.stderr_thread.take() {
             let _ = thread.join();
         }
+        let _ = self.drain_stderr();
     }
 }
 
@@ -344,7 +380,7 @@ mod tests {
 
     /// Returns a short timeout used to distinguish a live child from EOF.
     fn short_timeout() -> Duration {
-        Duration::from_millis(50)
+        Duration::from_millis(200)
     }
 
     #[test]
@@ -457,7 +493,10 @@ mod tests {
             process.recv_stdout(short_timeout()).unwrap(),
             Some(String::from("stdout:ping"))
         );
-        process.drain_stderr().unwrap();
+        assert_eq!(
+            process.recv_stderr(short_timeout()).unwrap(),
+            Some(String::from("stderr"))
+        );
         drop(process);
 
         let log = fs::read_to_string(&log_path).unwrap();

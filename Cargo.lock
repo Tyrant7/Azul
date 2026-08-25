@@ -136,8 +136,10 @@ name = "interface"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "libc",
  "movegen",
  "rand",
+ "windows-sys",
 ]
 
 [[package]]

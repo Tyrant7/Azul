@@ -12,13 +12,14 @@
 //! The executable is currently a development harness: it can spawn configured
 //! child processes, perform the UAI startup sequence, enforce per-engine time
 //! controls, and run a local UAI game or human-input game. Tournaments and
-//! logging/resource-limit infrastructure are still pending.
+//! structured logging and tournament infrastructure are still pending.
 
 pub mod format;
 pub mod parsing;
 pub mod protocol;
 
 mod process;
+mod resource;
 
 use std::{io, path::PathBuf, sync::Arc, time::Duration};
 
@@ -50,6 +51,8 @@ fn main() {
                 .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
                 .unwrap_or_default();
             EngineLaunch::new(e.path.clone(), args, e.dir.clone())
+                .with_limits(e.limit_mem, e.limit_threads)
+                .expect("invalid engine resource limits")
         })
         .collect::<Vec<_>>();
     let mut engines = launches

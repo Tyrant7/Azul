@@ -44,8 +44,8 @@ each descriptor; the other fields are optional.
 | `dir` | path | none | Working directory for the engine process. |
 | `args` | one whitespace-free string | none | Additional argument text passed to the engine. |
 | `name` | text | none | Display name for the engine. |
-| `limit_mem` | unsigned integer | none | Per-engine memory limit value reserved for resource enforcement. |
-| `limit_threads` | unsigned integer | none | Per-engine thread limit value reserved for resource enforcement. |
+| `limit_mem` | positive integer MiB | none | Hard per-engine memory cap. Windows uses a Job Object; Linux uses `RLIMIT_AS`. |
+| `limit_threads` | positive integer | `1` | Hard live-thread cap monitored by the interface on Windows/Linux. |
 
 Example:
 
@@ -56,6 +56,11 @@ Example:
 
 Unknown fields, missing `path`/time control, invalid numeric values, and using
 both `tc` and `st` reject the command line.
+
+Resource limits are applied to the engine process and are re-applied after a
+restart. A process that exceeds either cap is terminated and forfeits; resource
+limit failures are not restarted by `--recover`. Other platforms reject a
+requested limit they cannot enforce instead of silently ignoring it.
 
 ## Match and tournament options
 
