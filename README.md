@@ -8,7 +8,7 @@ This repository is an experimental Rust implementation of the board game Azul, t
 azul/
 ├── movegen/         Core Azul rules and game-state representation
 ├── interface/       CLI, UAI direction, move parsing, and AzulFEN I/O
-├── random_engine/   Placeholder engine executable
+├── random_engine/   Random legal-move UAI engine
 ├── Cargo.toml       Workspace definition
 └── TODO.md          Development and reinforcement-learning roadmap
 ```
@@ -50,7 +50,7 @@ The interface executable parses CLI configuration, can spawn configured child pr
 
 ### `random_engine`
 
-[`random_engine/`](random_engine/) is reserved for a simple engine that can be used as a baseline opponent and as a smoke-test process for the interface. Its executable is currently only a placeholder.
+[`random_engine/`](random_engine/) is a simple UAI engine that selects uniformly from the legal moves in the supplied AzulFEN position. It is useful as a baseline opponent and as a smoke-test process for the interface. It supports `uai`, `isready`, `newgame`, `position fen`, `go`, `stop`, `setoption`, and `quit`.
 
 ## State and protocol boundaries
 

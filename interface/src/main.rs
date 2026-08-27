@@ -13,9 +13,9 @@
 //! child processes, perform the UAI startup sequence, and run a local UAI game
 //! or human-input game. Tournaments, timing, and recovery are still pending.
 
-pub mod format;
-pub mod parsing;
-pub mod protocol;
+mod format;
+mod parsing;
+mod protocol;
 
 mod process;
 

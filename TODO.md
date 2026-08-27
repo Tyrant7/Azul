@@ -2,8 +2,8 @@
 
 This roadmap reflects the current workspace on 2026-08-27. `movegen` is the
 working rules library; `interface` has basic AzulFEN, move parsing, process
-management, and a two-to-four-player UAI game loop; `random_engine` is still a
-placeholder. Keep the dependency direction as:
+management, and a two-to-four-player UAI game loop; `random_engine` is a legal
+random-move UAI baseline. Keep the dependency direction as:
 
 ```text
 movegen  <-  interface and engines  <-  tournaments, self-play, and training
@@ -13,18 +13,15 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 
 Do these in order. Each item should leave behind a runnable check or test.
 
-1. **Make `random_engine` a legal UAI engine.** Implement `uai`, `isready`,
-	 `newgame`, `position fen`, `go`, and `quit`; choose from
-	 `GameState::get_valid_moves()` and return a valid `bestmove`.
-2. **Add an end-to-end smoke test.** Build the random engine, start two to four
+1. **Add an end-to-end smoke test.** Build the random engine, start two to four
 	 copies through `interface`, play a seeded game, and assert a terminal result.
-3. **Separate interface setup from match execution.** Wire `--dry-run`,
+2. **Separate interface setup from match execution.** Wire `--dry-run`,
 	 `--check-engines`, engine names, `--out`, and clean startup/handshake errors;
 	 remove the debug `Cli` dump and `expect`-based process failures.
-4. **Implement the first real time-control path.** Start with fixed
+3. **Implement the first real time-control path.** Start with fixed
 	 per-move time (`st`), enforce a deadline around `go`, then add increment
 	 clocks. Define timeout and forfeiture behavior in the protocol docs.
-5. **Connect diagnostics and recovery.** Surface stderr, debug/log output,
+4. **Connect diagnostics and recovery.** Surface stderr, debug/log output,
 	 child exit status, and protocol errors; make `--recover` restart a crashed
 	 engine only at a well-defined game boundary.
 
