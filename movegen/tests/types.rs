@@ -18,3 +18,25 @@ fn move_default_targets_the_floor_of_the_centre() {
         }
     );
 }
+
+#[test]
+fn move_display_uses_the_six_digit_protocol_format() {
+    assert_eq!(
+        Move {
+            bowl: 4,
+            tile_type: 1,
+            row: Row::Wall(1),
+        }
+        .to_string(),
+        "040102"
+    );
+    assert_eq!(
+        Move {
+            bowl: 0,
+            tile_type: 4,
+            row: Row::Floor,
+        }
+        .to_string(),
+        "000400"
+    );
+}
