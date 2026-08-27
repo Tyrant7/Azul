@@ -5,3 +5,4 @@ pub mod parsing;
 pub mod protocol;
 
 mod process;
+mod resource;
