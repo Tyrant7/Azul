@@ -69,42 +69,13 @@ fn write_bestmove(game: &Option<GameState>, stdout: &mut impl Write) -> io::Resu
     writeln!(stdout, "bestmove {}", format_move(choice))
 }
 
-fn format_move(choice: &Move) -> String {
-    let row = match choice.row {
-        Row::Floor => 0,
-        Row::Wall(row) => row + 1,
-    };
-    format!("{:02}{:02}{:02}", choice.bowl, choice.tile_type, row)
-}
-
 fn invalid_command(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{format_move, handle_command};
-    use azul_movegen::{Move, Row};
-
-    #[test]
-    fn formats_floor_and_wall_moves() {
-        assert_eq!(
-            format_move(&Move {
-                bowl: 0,
-                tile_type: 4,
-                row: Row::Floor,
-            }),
-            "000400"
-        );
-        assert_eq!(
-            format_move(&Move {
-                bowl: 4,
-                tile_type: 1,
-                row: Row::Wall(1),
-            }),
-            "040102"
-        );
-    }
+    use super::handle_command;
 
     #[test]
     fn announces_uai_identity_and_readiness() {
