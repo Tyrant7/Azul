@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{Tile, row::Row};
 
 /// A selection of one tile type from one bowl and its destination on the active board.
@@ -11,8 +13,8 @@ pub struct Move {
     pub row: Row,
 }
 
-impl std::fmt::Display for Move {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let row = match self.row {
             Row::Floor => 0,
             Row::Wall(row) => row + 1,

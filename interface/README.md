@@ -8,8 +8,9 @@ The current executable parses the options, starts configured child processes,
 manages their standard streams, performs the UAI startup sequence, and runs a
 two-to-four-player UAI game when all configured engines use UAI. It also retains
 a local human-input game. Match scheduling, time controls, persistence,
-diagnostics, and recovery options are parsed but are not all wired into
-execution yet.
+and diagnostics/resource-limit options are parsed but are not all wired into
+execution yet. The `--recover` option enables one bounded restart for a crashed
+or protocol-erroring engine during a UAI game.
 
 ## Quick start
 
@@ -43,8 +44,8 @@ each descriptor; the other fields are optional.
 | `dir` | path | none | Working directory for the engine process. |
 | `args` | one whitespace-free string | none | Additional argument text passed to the engine. |
 | `name` | text | none | Display name for the engine. |
-| `limit_mem` | unsigned integer | none | Per-engine memory limit value reserved for resource enforcement. |
-| `limit_threads` | unsigned integer | none | Per-engine thread limit value reserved for resource enforcement. |
+| `limit_mem` | positive integer MiB | none | Hard per-engine memory cap. Windows uses a Job Object; Linux uses `RLIMIT_AS`. |
+| `limit_threads` | positive integer | `1` | Hard live-thread cap monitored by the interface on Windows/Linux. |
 
 Example:
 
@@ -55,6 +56,11 @@ Example:
 
 Unknown fields, missing `path`/time control, invalid numeric values, and using
 both `tc` and `st` reject the command line.
+
+Resource limits are applied to the engine process and are re-applied after a
+restart. A process that exceeds either cap is terminated and forfeits; resource
+limit failures are not restarted by `--recover`. Other platforms reject a
+requested limit they cannot enforce instead of silently ignoring it.
 
 ## Match and tournament options
 
@@ -71,8 +77,8 @@ both `tc` and `st` reject the command line.
 | `--seed` | unsigned `N` | Seed for reproducible tournament randomness. |
 | `--openings` | `PATH` | Load starting positions or an opening book. |
 | `--swap` | flag | Balance which engine receives each starting side. |
-| `--timeout` | `N`, default `10` | Timeout value used for engine responses; the runtime unit is currently defined by the future process-management implementation. |
-| `--recover` | flag | Restart a crashed engine instead of immediately forfeiting. |
+| `--timeout` | `N`, default `10` | Startup handshake/readiness timeout in seconds. Move deadlines come from each engine's `tc` or `st` setting. |
+| `--recover` | flag | Restart a crashed or protocol-erroring engine once instead of immediately forfeiting. |
 
 ## Diagnostics and logging options
 
@@ -82,9 +88,9 @@ both `tc` and `st` reject the command line.
 | `--dry-run` | Parse configuration and validate setup without starting games. |
 | `--check-engines` | Perform an engine handshake check. |
 | `--summary` | Print results after rounds or matches. |
-| `--debug` | Display engine input and output. |
-| `--log` | Write engine communication to a log. |
-| `--stderr` | Display command-line or engine error messages. |
+| `--debug` | Display tagged engine commands and protocol stdout. |
+| `--log` | Write engine commands, stdout, and stderr to a sibling `.log` file next to `--out`. |
+| `--stderr` | Display engine stderr while preserving protocol stdout for the interface. |
 | `--quiet` | Suppress normal output, leaving errors and final results. |
 
 Clap also provides `--help`. Run `cargo run -p interface -- --help` to view

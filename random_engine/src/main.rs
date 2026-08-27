@@ -1,7 +1,8 @@
 use std::io::{self, BufRead, Write};
 
-use azul_movegen::{GameState, Move, Row};
+use azul_movegen::GameState;
 use interface::parsing::FromAzulFEN;
+
 use rand::prelude::IndexedRandom;
 
 fn main() {
@@ -66,7 +67,7 @@ fn write_bestmove(game: &Option<GameState>, stdout: &mut impl Write) -> io::Resu
     let choice = moves
         .choose(&mut rand::rng())
         .ok_or_else(|| invalid_command("position has no legal moves"))?;
-    writeln!(stdout, "bestmove {}", format_move(choice))
+    writeln!(stdout, "bestmove {choice}")
 }
 
 fn invalid_command(message: &str) -> io::Error {

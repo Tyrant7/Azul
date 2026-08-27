@@ -6,8 +6,8 @@ with engine processes. It follows the shape of the Universal Chess Interface
 
 This document is the project specification for UAI. The executable currently
 contains the configuration, parsing, child-process stream, startup handshake,
-and basic turn-loop pieces. Match scheduling, time controls, and recovery
-remain implementation work.
+basic turn-loop pieces, and bounded engine recovery. Match scheduling,
+structured diagnostics, and resource limits remain implementation work.
 
 ## Transport
 
@@ -30,7 +30,8 @@ The interface and engine use the following lifecycle:
 3. The interface sends `isready` and waits for `readyok` before starting a
    game.
 4. The interface sends `newgame`, followed by a `position` command.
-5. The interface sends `go` when it is the engine's turn.
+5. The interface sends `go movetime <milliseconds>` when it is the engine's
+   turn, using the player's current time budget.
 6. The engine responds with `bestmove` and may send `info` lines first.
 7. The interface sends another `position`/`go` pair, or sends `quit` to end
    the process.
@@ -48,7 +49,7 @@ An engine must finish any outstanding work before replying to `isready`.
 | `position startpos` | Yes | Loads the standard empty Azul position. |
 | `position fen <AzulFEN>` | Yes | Loads the position encoded by [`azulfen.md`](./azulfen.md). |
 | `go` | Yes | Requests a move for the active player. |
-| `go movetime <milliseconds>` | Yes | Requests a move with a fixed time budget. |
+| `go movetime <milliseconds>` | Yes | Requests a move with a fixed millisecond budget. |
 | `go wtime <milliseconds> btime <milliseconds>` | Planned | Supplies remaining clocks for the two sides. |
 | `stop` | Planned | Stops an in-progress search; the engine must still return `bestmove`. |
 | `quit` | Yes | Requests process termination. |
@@ -68,7 +69,7 @@ but current snapshots use complete AzulFEN states instead.
 | `readyok` | Yes after `isready` | Confirms the engine is ready. |
 | `info ...` | Optional during `go` | Non-terminal search progress or evaluation update. The interface may ignore the line and must continue waiting for `bestmove`. |
 | `bestmove <move>` | Yes after `go` | Returns the selected move in the [move format](#move-format). |
-| `error <text>` | When needed | Terminal failure for the current command or position. The interface must abort that operation and must not treat the line as a move or readiness response. |
+| `error <text>` | When needed | Terminal failure for the current command or position. The interface must abort that operation and must not treat the line as a move or readiness response; the match runner may restart the process once when recovery is enabled. |
 
 An engine must emit exactly one `uaiok` for each completed `uai` handshake and
 exactly one `bestmove` for each `go` request, unless the process exits or the
@@ -84,6 +85,8 @@ The response prefix determines how the interface handles the rest of the line:
 - `error ` is a terminal failure response. The remainder of the line is a
   human-readable explanation. It applies to the current command or position,
   and the interface should stop waiting for that command's normal response.
+  The match runner may then replace the process and retry once when recovery
+  is enabled.
 
 For example, `info depth 8 score 12` reports search progress, while `error
 invalid position` reports that the engine could not accept the requested
@@ -119,6 +122,13 @@ The interface rejects malformed or invalid positions before asking an engine to
 search them. The turn loop sends a complete authoritative position before each
 `go` request and validates the returned move against the local state.
 
+For a fixed per-move control (`st`), the interface sends that value as the
+`movetime` budget on every turn. For an increment control (`tc=BASE+INC`), it
+starts the player's clock at `BASE` seconds, sends the current remaining clock
+as the `movetime` budget, subtracts the elapsed search time, and adds `INC`
+seconds after a successful move. A response that arrives after the deadline is
+a timeout, and `info` lines do not extend that deadline.
+
 ## Errors and termination
 
 Errors are single-line responses:
@@ -129,8 +139,20 @@ error <human-readable explanation>
 
 Errors should identify the command or field that failed without exposing stack
 traces or other diagnostic output on standard output. Fatal transport errors,
-engine crashes, and timeouts are managed by the interface process and are not
-recovered through an `error` response.
+engine crashes, and timeouts are managed by the interface process. The
+interface's `--timeout` setting is
+used for startup handshake/readiness waits; move deadlines come from the
+configured engine time control.
+
+## Engine failure policy
+
+During a game, timeouts, malformed responses, and illegal moves forfeit the
+engine immediately. Crashes, EOF, broken pipes, and explicit `error` responses
+are recoverable process failures when `--recover` is enabled. Recovery is
+limited to one restart per engine per game: the replacement repeats the UAI
+handshake, readiness check, `newgame`, and current AzulFEN before retrying the
+same turn. If recovery is disabled, or the retry also fails, the engine
+forfeits. An accepted move is never undone.
 
 ## Compatibility
 

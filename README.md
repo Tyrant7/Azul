@@ -46,7 +46,7 @@ The normal game flow is:
 
 See the [`interface/README.md`](interface/README.md) for command-line configuration, [`interface/protocol.md`](interface/protocol.md) for the UAI direction, and [`interface/azulfen.md`](interface/azulfen.md) for the state interchange format.
 
-The interface executable parses CLI configuration, can spawn configured child processes with managed stdin/stdout/stderr, performs the UAI startup sequence, and runs a two-to-four-player UAI game when all configured engines use UAI. It also retains a local human-input mode. Tournaments, timing, recovery, and advanced UAI options remain to be implemented.
+The interface executable parses CLI configuration, can spawn configured child processes with managed stdin/stdout/stderr, performs the UAI startup sequence, enforces time controls, recovers eligible engine failures when requested, and runs a two-to-four-player UAI game when all configured engines use UAI. It also retains a local human-input mode. Tournaments, logging/resource limits, and advanced UAI options remain to be implemented.
 
 ### `random_engine`
 

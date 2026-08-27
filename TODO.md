@@ -1,17 +1,48 @@
 # TODO
 
-This roadmap reflects the current workspace on 2026-08-27. `movegen` is the
-working rules library; `interface` has basic AzulFEN, move parsing, process
-management, and a two-to-four-player UAI game loop; `random_engine` is a legal
-random-move UAI baseline. Keep the dependency direction as:
+## Interface
+- Complete UAI command dispatch with diagnostics, recovery, and tournament integration
+  - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
+  - Add the remaining `go` forms, including clock-aware commands if the UAI draft adopts them.
+  - Preserve strict response handling: consume `info` updates, accept exactly one `bestmove`, and surface `error` responses with the active command.
+  - Reject protocol responses that arrive out of phase, including duplicate terminal responses, unexpected EOF, and moves from the wrong player.
+  - Add end-to-end tests using a deterministic fake UAI engine for normal play, malformed output, illegal moves, timeouts, and graceful `quit`.
+- Implement structured logging and resource limits
+  - Persist completed-game and forfeit records, including failure reason, player, restart attempts, and final clock state.
+  - Extend recovery coverage across startup failures, crashes, EOF, broken pipes, and repeated restart exhaustion.
+  - Add structured command/response logging with engine identity, player, game, turn, timestamps, and redaction rules for sensitive paths or arguments.
+  - Wire `--debug`, `--log`, `--stderr`, and `--quiet` to the same diagnostics pipeline without contaminating protocol stdout.
+  - Extend platform resource-limit tests to cover descendant processes, restart inheritance, and resource-limit forfeit reporting.
+
+- Implement tournament scheduling, concurrency, resumable results, openings, and summaries
+  - Convert engine configurations into deterministic pairings for gauntlet, round-robin, Swiss, and random styles.
+  - Honor `--games`, `--rounds`, `--repeat`, `--max-games`, `--swap`, and the tournament seed in pairing and side assignment.
+  - Run independent games concurrently while isolating processes, RNG seeds, logs, and result records per game.
+  - Define a versioned results format containing participants, configuration, seed, outcome, scores, termination reason, and elapsed time.
+  - Make `--out` atomic and make `--resume` validate configuration compatibility before continuing unfinished work.
+  - Load and validate opening positions, then include the opening snapshot in reproducibility metadata.
+  - Produce summaries for wins, draws, scores, failures, timeouts, game length, and throughput.
 
 ```text
 movegen  <-  interface and engines  <-  tournaments, self-play, and training
 ```
 
-## Suggested next items
-
-Do these in order. Each item should leave behind a runnable check or test.
+### Environment contract
+- Define a stable environment API with `reset`, `step`, terminal/truncated status, rewards, and episode metadata
+- Define the observation space for one player and for a centralized critic
+- Define a canonical action encoding for every legal move, including an explicit legal-action mask
+- Define perspective handling so the active player, opponent boards, scores, and rewards are unambiguous
+- Decide how invalid actions are handled: masked before inference, rejected by the environment, and never silently converted
+- Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
+- Add batched and vectorized environments for parallel rollouts
+- Add deterministic seeded resets and replayable episode seeds
+### Rules and environment validation
+- Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
+- Add golden tests for legal-action masks and observation encodings
+- Test AzulFEN save/load as an exact environment snapshot, including RNG and turn metadata where required
+- Test that random, scripted, and model policies cannot create illegal or impossible states
+- Add short deterministic smoke episodes and a random-policy baseline
+- Add performance benchmarks for reset, step, legal moves, cloning, serialization, and batched stepping
 
 1. **Add an end-to-end smoke test.** Build the random engine, start two to four
 	 copies through `interface`, play a seeded game, and assert a terminal result.
