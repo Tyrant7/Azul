@@ -14,9 +14,9 @@
 //! controls, and run a local UAI game or human-input game. Tournaments and
 //! structured logging and tournament infrastructure are still pending.
 
-pub mod format;
-pub mod parsing;
-pub mod protocol;
+mod format;
+mod parsing;
+mod protocol;
 
 mod process;
 mod resource;

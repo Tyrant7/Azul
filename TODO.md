@@ -7,7 +7,6 @@
   - Preserve strict response handling: consume `info` updates, accept exactly one `bestmove`, and surface `error` responses with the active command.
   - Reject protocol responses that arrive out of phase, including duplicate terminal responses, unexpected EOF, and moves from the wrong player.
   - Add end-to-end tests using a deterministic fake UAI engine for normal play, malformed output, illegal moves, timeouts, and graceful `quit`.
-
 - Implement structured logging and resource limits
   - Persist completed-game and forfeit records, including failure reason, player, restart attempts, and final clock state.
   - Extend recovery coverage across startup failures, crashes, EOF, broken pipes, and repeated restart exhaustion.
@@ -35,7 +34,6 @@
 - Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
 - Add batched and vectorized environments for parallel rollouts
 - Add deterministic seeded resets and replayable episode seeds
-
 ### Rules and environment validation
 - Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
 - Add golden tests for legal-action masks and observation encodings
