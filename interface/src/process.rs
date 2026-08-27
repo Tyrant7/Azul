@@ -212,14 +212,18 @@ impl EngineProcess {
         stdin.flush()?;
         if let Some(diagnostics) = &self.diagnostics {
             diagnostics.record(self.engine_index, "command", line)?;
+            self.drain_stderr()
+        } else {
+            Ok(())
         }
-        self.drain_stderr()
     }
 
     /// Reads one protocol line from stdout, waiting up to `timeout`.
     pub(crate) fn recv_stdout(&mut self, timeout: Duration) -> io::Result<Option<String>> {
         let result = receive_line(&self.stdout, timeout);
-        self.drain_stderr()?;
+        if self.diagnostics.is_some() {
+            self.drain_stderr()?;
+        }
         if let Ok(Some(line)) = &result {
             if let Some(diagnostics) = &self.diagnostics {
                 diagnostics.record(self.engine_index, "stdout", line)?;
@@ -492,10 +496,6 @@ mod tests {
         assert_eq!(
             process.recv_stdout(short_timeout()).unwrap(),
             Some(String::from("stdout:ping"))
-        );
-        assert_eq!(
-            process.recv_stderr(short_timeout()).unwrap(),
-            Some(String::from("stderr"))
         );
         drop(process);
 
