@@ -1,80 +1,99 @@
 # TODO
 
-## Interface
-- Complete UAI command dispatch with time controls, diagnostics, recovery, and tournament integration
-- Implement time controls, deadlines, engine recovery, logging, and resource limits
-- Implement tournament scheduling, concurrency, resumable results, openings, and summaries
+This roadmap reflects the current workspace on 2026-08-27. `movegen` is the
+working rules library; `interface` has basic AzulFEN, move parsing, process
+management, and a two-to-four-player UAI game loop; `random_engine` is still a
+placeholder. Keep the dependency direction as:
 
-## Reinforcement learning system
+```text
+movegen  <-  interface and engines  <-  tournaments, self-play, and training
+```
 
-### Environment contract
-- Define a stable environment API with `reset`, `step`, terminal/truncated status, rewards, and episode metadata
-- Define the observation space for one player and for a centralized critic
-- Define a canonical action encoding for every legal move, including an explicit legal-action mask
-- Define perspective handling so the active player, opponent boards, scores, and rewards are unambiguous
-- Decide how invalid actions are handled: masked before inference, rejected by the environment, and never silently converted
-- Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
-- Add batched and vectorized environments for parallel rollouts
-- Add deterministic seeded resets and replayable episode seeds
+## Suggested next items
 
-### Rules and environment validation
-- Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
-- Add golden tests for legal-action masks and observation encodings
-- Test AzulFEN save/load as an exact environment snapshot, including RNG and turn metadata where required
-- Test that random, scripted, and model policies cannot create illegal or impossible states
-- Add short deterministic smoke episodes and a random-policy baseline
-- Add performance benchmarks for reset, step, legal moves, cloning, serialization, and batched stepping
+Do these in order. Each item should leave behind a runnable check or test.
 
-### Baselines and agents
-- Finish `random_engine` as a legal random-move baseline
-- Add a deterministic heuristic baseline for measuring learning progress
-- Define a policy/value agent interface independent of a particular neural-network framework
-- Implement action selection with legal-action masking, temperature, exploration, and evaluation modes
-- Choose and implement the initial learning algorithm (for example PPO, or policy/value self-play with MCTS)
-- Support self-play with alternating player perspectives and correct credit assignment across turns and rounds
-- Add optional opponent pools, fixed checkpoints, and exploitability-style evaluation
+1. **Make `random_engine` a legal UAI engine.** Implement `uai`, `isready`,
+	 `newgame`, `position fen`, `go`, and `quit`; choose from
+	 `GameState::get_valid_moves()` and return a valid `bestmove`.
+2. **Add an end-to-end smoke test.** Build the random engine, start two to four
+	 copies through `interface`, play a seeded game, and assert a terminal result.
+3. **Separate interface setup from match execution.** Wire `--dry-run`,
+	 `--check-engines`, engine names, `--out`, and clean startup/handshake errors;
+	 remove the debug `Cli` dump and `expect`-based process failures.
+4. **Implement the first real time-control path.** Start with fixed
+	 per-move time (`st`), enforce a deadline around `go`, then add increment
+	 clocks. Define timeout and forfeiture behavior in the protocol docs.
+5. **Connect diagnostics and recovery.** Surface stderr, debug/log output,
+	 child exit status, and protocol errors; make `--recover` restart a crashed
+	 engine only at a well-defined game boundary.
 
-### Model and training runtime
-- Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
-- Implement observation encoding, policy logits, value prediction, and batched inference
-- Implement loss functions, optimizer, gradient clipping, learning-rate schedules, and entropy/value-loss weighting
-- Implement rollout workers and an actor/learner data path
-- Support configurable parallel environments, inference batches, rollout length, and update frequency
-- Add checkpoint save/load for model weights, optimizer state, scheduler state, counters, configuration, and RNG state
-- Add checkpoint compatibility/versioning and a way to resume interrupted training
-- Add replay or trajectory storage with episode IDs, observations, actions, masks, rewards, values, log-probabilities, and terminal flags
-- Add generalized advantage estimation or the equivalent return/target calculation for the selected algorithm
-- Add replay-buffer capacity, sampling, prioritization, persistence, and cleanup if the selected algorithm needs replay
+## Phase 1: Usable engine harness
 
-### Self-play and evaluation
-- Build a self-play runner that can generate reproducible games from a checkpoint
-- Store trajectories and completed game results in a documented, versioned format
-- Add head-to-head evaluation against random, heuristic, previous-checkpoint, and external UAI engines
-- Track win rate, score, score difference, game length, illegal-action rate, and throughput
-- Add Elo or another rating system for checkpoint and opponent-pool comparisons
-- Add promotion gates so new checkpoints must beat a reference agent before entering the opponent pool
-- Add deterministic evaluation suites separate from stochastic training
-- Add tools to replay a trajectory and inspect observations, masks, rewards, and chosen actions
+- Complete UAI command handling and document the command/response grammar.
+- Add fixture-engine integration tests for handshake, readiness, full games,
+	illegal moves, malformed responses, timeout, crash, stderr, and shutdown.
+- Make human and UAI modes explicit instead of silently falling back to a
+	local human game for mixed configurations.
+- Add process resource limits where the platform supports them, or reject
+	unsupported limits clearly.
+- Tighten protocol parsing to match the documented whitespace and error rules.
 
-### Experiment management
-- Define a single versioned training configuration covering seeds, environment, model, algorithm, rollout, evaluation, and output paths
-- Record the repository revision, configuration, dependency versions, platform, and random seeds with every run
-- Add structured metrics, episode logs, checkpoint metadata, and optional experiment tracking
-- Add CLI commands for training, self-play generation, evaluation, checkpoint inspection, and replay
-- Add graceful shutdown and periodic checkpointing for long-running jobs
-- Add resource controls for worker count, memory, CPU threads, GPU selection, and storage limits
-- Document how to reproduce a published run from a clean checkout
+## Phase 2: Rules and state robustness
 
-### Serving and engine integration
-- Load a trained checkpoint into an engine process without importing training-only dependencies
-- Expose the trained policy through the UAI protocol and the existing interface tournament runner
-- Support inference-time limits, deterministic strength testing, temperature, and optional search
-- Add model validation when loading checkpoints and clear protocol errors for unsupported positions
-- Benchmark end-to-end move latency and throughput under realistic tournament concurrency
+- Validate builder and AzulFEN invariants: tile counts, wall/pattern-line
+	consistency, penalties, active-player metadata, and impossible states.
+- Add property/regression tests for legal moves, move application, round setup,
+	scoring, game-over transitions, and tile conservation.
+- Add exact seeded snapshot tests covering AzulFEN round trips, RNG state, and
+	future draw order.
+- Add deterministic random-play smoke games and benchmarks for legal moves,
+	stepping, cloning, and serialization.
 
-### Reliability and maintenance
-- Add unit, integration, property, serialization, and end-to-end process tests for the full RL path
-- Add CI checks for formatting, linting, tests, reproducibility smoke runs, and documentation links
-- Profile memory and allocations in move generation, self-play, batching, and replay storage
-- Document model/data licenses and the provenance of generated games
-- Keep the rules engine, environment API, protocol, trajectory format, and model checkpoints versioned independently where practical
+## Phase 3: Matches and tournaments
+
+- Extract a reusable match runner from `interface/src/main.rs`.
+- Implement seeded game scheduling for round-robin first, then gauntlet,
+	random, and Swiss styles.
+- Persist versioned game results with participants, seed, time control, moves,
+	scores, winner, and failure reason.
+- Add resume, `--max-games`, repeated matches, opening positions, side
+	swapping, concurrency, and summaries incrementally.
+- Track win rate, score difference, game length, illegal-action rate, timeout
+	rate, and throughput.
+
+## Phase 4: Reinforcement-learning foundation
+
+- Define a stable environment API with `reset`, `step`, terminal/truncated
+	status, rewards, metadata, deterministic seeds, and replayable episodes.
+- Define one canonical action encoding for every legal move and expose a legal
+	action mask; reject invalid actions rather than silently converting them.
+- Define player perspective, round/game boundaries, first-player-token
+	ownership, and observation encodings for player and centralized-critic use.
+- Finish random and deterministic heuristic baselines before training a model.
+- Add a short deterministic environment smoke run and golden observation/mask
+	tests.
+
+## Phase 5: Training and evaluation
+
+- Choose the initial algorithm and model backend only after the environment
+	contract is tested; keep CPU inference available for tests.
+- Implement batched/vectorized environments, rollout storage, masked action
+	selection, returns/advantages, and the selected optimizer/training loop.
+- Version checkpoints with model, optimizer, scheduler, configuration, counters,
+	dependency versions, repository revision, and RNG state.
+- Build reproducible self-play and evaluation against random, heuristic,
+	previous-checkpoint, and external UAI opponents.
+- Add promotion gates, Elo or equivalent ratings, trajectory replay tools, and
+	metrics for win rate, score, game length, illegal actions, and throughput.
+
+## Maintenance and release gates
+
+- Add CI for `cargo fmt --check`, `cargo clippy --workspace --all-targets`,
+	`cargo test --workspace`, documentation builds, and deterministic smoke runs.
+- Keep AzulFEN, UAI, environment, trajectory, and checkpoint formats versioned
+	and documented independently.
+- Record experiment provenance, generated-game provenance, and applicable model
+	or data licenses.
+- Profile allocations and memory before optimizing batching, self-play, or
+	replay storage.
