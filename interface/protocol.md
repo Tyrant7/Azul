@@ -30,8 +30,9 @@ The interface and engine use the following lifecycle:
 3. The interface sends `isready` and waits for `readyok` before starting a
    game.
 4. The interface sends `newgame`, followed by a `position` command.
-5. The interface sends `go movetime <milliseconds>` when it is the engine's
-   turn, using the player's current time budget.
+5. The interface sends `go movetime <milliseconds>` for fixed-time engines, or
+  `go clock <remaining-milliseconds> <increment-milliseconds>` for
+  clock-controlled engines.
 6. The engine responds with `bestmove` and may send `info` lines first.
 7. The interface sends another `position`/`go` pair, or sends `quit` to end
    the process.
@@ -50,7 +51,7 @@ An engine must finish any outstanding work before replying to `isready`.
 | `position fen <AzulFEN>` | Yes | Loads the position encoded by [`azulfen.md`](./azulfen.md). |
 | `go` | Yes | Requests a move for the active player. |
 | `go movetime <milliseconds>` | Yes | Requests a move with a fixed millisecond budget. |
-| `go wtime <milliseconds> btime <milliseconds>` | Planned | Supplies remaining clocks for the two sides. |
+| `go clock <remaining> <increment>` | Yes | Supplies the active engine's remaining clock and increment in milliseconds; the engine chooses its own allocation. |
 | `stop` | Planned | Stops an in-progress search; the engine must still return `bestmove`. |
 | `quit` | Yes | Requests process termination. |
 
@@ -123,11 +124,12 @@ search them. The turn loop sends a complete authoritative position before each
 `go` request and validates the returned move against the local state.
 
 For a fixed per-move control (`st`), the interface sends that value as the
-`movetime` budget on every turn. For an increment control (`tc=BASE+INC`), it
-starts the player's clock at `BASE` seconds, sends the current remaining clock
-as the `movetime` budget, subtracts the elapsed search time, and adds `INC`
-seconds after a successful move. A response that arrives after the deadline is
-a timeout, and `info` lines do not extend that deadline.
+`movetime` upper bound on every turn. For an increment control (`tc=BASE+INC`),
+it starts the player's clock at `BASE` seconds, sends the current remaining
+clock and `INC` to the engine, subtracts the elapsed search time, and adds
+`INC` seconds after a successful move. The engine chooses its own search
+allocation within the interface's hard deadline. A response that arrives
+after the deadline is a timeout, and `info` lines do not extend that deadline.
 
 ## Errors and termination
 

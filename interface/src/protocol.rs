@@ -169,6 +169,19 @@ pub(crate) fn send_go_movetime(process: &mut EngineProcess, budget: Duration) ->
     process.send_line(&format!("go movetime {}", budget.as_millis()))
 }
 
+/// Requests a move while giving the engine its remaining clock and increment.
+pub(crate) fn send_go_clock(
+    process: &mut EngineProcess,
+    remaining: Duration,
+    increment: Duration,
+) -> io::Result<()> {
+    process.send_line(&format!(
+        "go clock {} {}",
+        remaining.as_millis(),
+        increment.as_millis()
+    ))
+}
+
 /// Tracks one player's configured clock across turns.
 #[derive(Debug, Clone)]
 struct PlayerClock {
@@ -186,9 +199,23 @@ impl PlayerClock {
         Self { control, remaining }
     }
 
-    /// Returns the maximum duration allowed for the next move.
+    /// Returns the hard deadline budget for the next move.
     fn move_budget(&self) -> Duration {
         self.remaining
+    }
+
+    /// Sends the time-control information appropriate for the next move.
+    fn send_go(&self, process: &mut EngineProcess) -> io::Result<()> {
+        match self.control {
+            TimeControl::Fixed(milliseconds) => {
+                send_go_movetime(process, Duration::from_millis(milliseconds as u64))
+            }
+            TimeControl::Increment(_, increment) => send_go_clock(
+                process,
+                self.remaining,
+                Duration::from_secs(increment as u64),
+            ),
+        }
     }
 
     /// Applies elapsed time and any configured increment after a move.
@@ -347,7 +374,7 @@ pub(crate) fn play_uai_game_with_recovery(
         let started = Instant::now();
         let deadline = started + budget;
         let choice = loop {
-            match request_move(process, &game, deadline) {
+            match request_move(process, &game, &clocks[active_player], deadline) {
                 Ok(choice) => break choice,
                 Err(failure) => {
                     if !failure.kind.recoverable()
@@ -409,17 +436,19 @@ pub(crate) fn play_uai_game_with_recovery(
 fn request_move(
     process: &mut EngineProcess,
     game: &GameState,
+    clock: &PlayerClock,
     deadline: Instant,
 ) -> Result<Move, EngineTurnFailure> {
     send_position(process, game).map_err(|error| transport_failure_at("position", error))?;
-    let budget = deadline.saturating_duration_since(Instant::now());
-    if budget < Duration::from_millis(1) {
+    if deadline.saturating_duration_since(Instant::now()) < Duration::from_millis(1) {
         return Err(EngineTurnFailure::new(
             EngineFailureKind::Timeout,
             "engine has no time remaining for its move",
         ));
     }
-    send_go_movetime(process, budget).map_err(|error| transport_failure_at("go", error))?;
+    clock
+        .send_go(process)
+        .map_err(|error| transport_failure_at("go", error))?;
     receive_bestmove(process, deadline)
 }
 
@@ -815,8 +844,8 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 mod tests {
     use super::{
         Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
-        play_uai_game_with_recovery, send_go, send_go_movetime, send_new_game, send_position,
-        uai_handshake, uai_ready,
+        play_uai_game_with_recovery, send_go, send_go_clock, send_go_movetime, send_new_game,
+        send_position, uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::{EngineLaunch, EngineProcess};
@@ -1313,6 +1342,18 @@ mod tests {
         assert_eq!(
             process.recv_stdout(Duration::from_secs(1)).unwrap(),
             Some(String::from("go movetime 500"))
+        );
+
+        let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
+        send_go_clock(
+            &mut process,
+            Duration::from_secs(10),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(
+            process.recv_stdout(Duration::from_secs(1)).unwrap(),
+            Some(String::from("go clock 10000 2000"))
         );
     }
 }
