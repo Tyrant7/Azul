@@ -236,30 +236,3 @@ fn listen_for_input(mut gamestate: GameState, protocol: Protocol, quiet: bool) {
     println!("Winner: player {}", gamestate.get_winner());
 }
 
-/// Runs a random-playout loop for the supplied game state.
-fn random_playout(mut gamestate: GameState, protocol: Protocol) {
-    loop {
-        io::stdin()
-            .read_line(&mut String::new())
-            .expect("Failed to read input");
-
-        let moves = gamestate.get_valid_moves();
-        let selection = moves.choose(&mut rand::rng()).cloned().unwrap_or_default();
-        println!("selection: {:?}", selection);
-
-        match gamestate.make_move(&selection) {
-            Err(_) => println!("Illegal move"),
-            Ok(_) => println!("{}", gamestate.fmt_protocol(protocol)),
-        };
-
-        if gamestate.round_over() {
-            gamestate.setup_next_round();
-        }
-
-        if gamestate.is_game_over() {
-            break;
-        }
-    }
-    println!("Game over");
-    println!("Winner: player {}", gamestate.get_winner());
-}
