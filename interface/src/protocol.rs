@@ -117,23 +117,21 @@ fn handshake_error(message: impl Into<String>) -> io::Error {
 /// Waits for an engine to finish initialization before a game starts.
 pub(crate) fn uai_ready(process: &mut EngineProcess, timeout: Duration) -> io::Result<()> {
     process.send_line("isready")?;
-    loop {
-        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "engine closed stdout during isready",
-            )
-        })?;
-        if line == "readyok" {
-            return Ok(());
-        }
-        if line.starts_with("error ") {
-            return Err(engine_response_error(line));
-        }
-        return Err(engine_response_error(format!(
-            "unexpected response during isready: {line}"
-        )));
+    let line = process.recv_stdout(timeout)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "engine closed stdout during isready",
+        )
+    })?;
+    if line == "readyok" {
+        return Ok(());
     }
+    if line.starts_with("error ") {
+        return Err(engine_response_error(line));
+    }
+    Err(engine_response_error(format!(
+        "unexpected response during isready: {line}"
+    )))
 }
 
 /// Sends the command that resets an engine's game-specific state.
