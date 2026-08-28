@@ -1,0 +1,9 @@
+[package]
+name = "rl_env"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+movegen = { path = "../movegen" }
+rand = "0.10.2"
+tch = "0.26.0"

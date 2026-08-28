@@ -2,5 +2,7 @@
 members = [
     "movegen",
     "interface", 
-    "random_engine",
+    "random_engine", 
+    "rl_env",
 ]
+resolver = "3"
