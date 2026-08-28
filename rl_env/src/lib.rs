@@ -182,8 +182,8 @@ pub struct SampleBuffer {
     pub actions: Tensor,
     pub rewards: Tensor,
     pub next_states: Tensor,
-    pub terminateds: Tensor,
-    pub truncateds: Tensor,
+    pub terminated: Tensor,
+    pub truncated: Tensor,
 }
 
 impl SampleBuffer {
@@ -194,8 +194,8 @@ impl SampleBuffer {
             actions: Tensor::zeros(&[batch_size], (tch::Kind::Int64, device)),
             rewards: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
             next_states: Tensor::zeros(&[batch_size, state_size], (tch::Kind::Float, device)),
-            terminateds: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
-            truncateds: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
+            terminated: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
+            truncated: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
         }
     }
 }
