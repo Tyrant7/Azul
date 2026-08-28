@@ -1,3 +1,5 @@
 /target
 **/target
 .agent-scratch/
+.venv/
+venv/

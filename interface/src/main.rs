@@ -235,4 +235,3 @@ fn listen_for_input(mut gamestate: GameState, protocol: Protocol, quiet: bool) {
     println!("Game over");
     println!("Winner: player {}", gamestate.get_winner());
 }
-
