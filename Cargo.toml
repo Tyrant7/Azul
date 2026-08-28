@@ -5,3 +5,4 @@ members = [
     "random_engine", 
     "rl_env",
 ]
+resolver = "3"

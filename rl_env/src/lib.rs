@@ -1,4 +1,4 @@
-use std::os::linux::raw::stat;
+use rand::seq::IndexedRandom;
 
 use azul_movegen::{GameState, Move};
 use tch::Tensor;
@@ -55,7 +55,7 @@ impl AzulEnv {
     pub fn step(&mut self, action: usize) -> StepResult {
         let choice = Self::map_action(action);
         self.gamestate
-            .apply_move(choice)
+            .make_move(&choice)
             .expect("valid move should be applied");
         self.steps += 1;
         let terminated = self.gamestate.is_game_over();
@@ -134,7 +134,7 @@ impl ReplayBuffer {
 
     pub fn sample(&self, batch_size: usize) -> Vec<&Transition> {
         self.transitions
-            .choose_multiple(&mut rand::rng(), batch_size)
+            .sample(&mut rand::rng(), batch_size)
             .collect()
     }
 
