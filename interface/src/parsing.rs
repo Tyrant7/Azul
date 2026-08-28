@@ -120,7 +120,7 @@ impl FromAzulFEN for Board {
             return Err(ParseGameStateError);
         }
         let mut holds = [[None; BOARD_DIMENSION]; BOARD_DIMENSION];
-        for row_idx in 0..BOARD_DIMENSION {
+        for (row_idx, row) in holds.iter_mut().enumerate().take(BOARD_DIMENSION) {
             let tile_type = held.as_bytes()[row_idx * 2];
             let tile_count = held.as_bytes()[row_idx * 2 + 1];
             if !(b'0'..=b'4').contains(&tile_type) || !(b'0'..=b'5').contains(&tile_count) {
@@ -131,7 +131,7 @@ impl FromAzulFEN for Board {
             if tile_count > row_idx + 1 || (tile_count == 0 && tile_type != 0) {
                 return Err(ParseGameStateError);
             }
-            for hold in holds[row_idx].iter_mut().take(tile_count) {
+            for hold in row.iter_mut().take(tile_count) {
                 *hold = Some(tile_type);
             }
         }

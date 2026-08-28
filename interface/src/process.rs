@@ -224,10 +224,10 @@ impl EngineProcess {
         if self.diagnostics.is_some() {
             self.drain_stderr()?;
         }
-        if let Ok(Some(line)) = &result {
-            if let Some(diagnostics) = &self.diagnostics {
-                diagnostics.record(self.engine_index, "stdout", line)?;
-            }
+        if let Ok(Some(line)) = &result
+            && let Some(diagnostics) = &self.diagnostics
+        {
+            diagnostics.record(self.engine_index, "stdout", line)?;
         }
         match result? {
             Some(line) => Ok(Some(line)),

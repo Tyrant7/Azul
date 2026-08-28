@@ -84,12 +84,12 @@ impl ProcessLimits {
     pub(crate) fn attach(&self, child: &Child) -> io::Result<ResourceGuard> {
         #[cfg(windows)]
         {
-            return windows_limits::attach(self, child);
+            windows_limits::attach(self, child)
         }
 
         #[cfg(target_os = "linux")]
         {
-            return linux_limits::attach(self, child);
+            linux_limits::attach(self, child)
         }
 
         #[cfg(all(not(target_os = "linux"), not(windows)))]
