@@ -117,23 +117,21 @@ fn handshake_error(message: impl Into<String>) -> io::Error {
 /// Waits for an engine to finish initialization before a game starts.
 pub(crate) fn uai_ready(process: &mut EngineProcess, timeout: Duration) -> io::Result<()> {
     process.send_line("isready")?;
-    loop {
-        let line = process.recv_stdout(timeout)?.ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "engine closed stdout during isready",
-            )
-        })?;
-        if line == "readyok" {
-            return Ok(());
-        }
-        if line.starts_with("error ") {
-            return Err(engine_response_error(line));
-        }
-        return Err(engine_response_error(format!(
-            "unexpected response during isready: {line}"
-        )));
+    let line = process.recv_stdout(timeout)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "engine closed stdout during isready",
+        )
+    })?;
+    if line == "readyok" {
+        return Ok(());
     }
+    if line.starts_with("error ") {
+        return Err(engine_response_error(line));
+    }
+    Err(engine_response_error(format!(
+        "unexpected response during isready: {line}"
+    )))
 }
 
 /// Sends the command that resets an engine's game-specific state.
@@ -157,11 +155,6 @@ pub(crate) fn send_position(process: &mut EngineProcess, game: &GameState) -> io
         ));
     }
     process.send_line(&format!("position fen {fen}"))
-}
-
-/// Requests a move from the engine for the current position.
-pub(crate) fn send_go(process: &mut EngineProcess) -> io::Result<()> {
-    process.send_line("go")
 }
 
 /// Requests a move with a fixed millisecond budget.
@@ -285,25 +278,8 @@ pub(crate) enum GameResult {
 /// Maximum recovery attempts permitted for one engine in one game.
 const MAX_RESTARTS_PER_ENGINE: usize = 1;
 
-/// Runs a complete UAI game across one engine process per player.
-pub(crate) fn play_uai_game(
-    processes: &mut [EngineProcess],
-    launches: &[EngineLaunch],
-    game: GameState,
-    time_controls: &[TimeControl],
-) -> io::Result<GameResult> {
-    play_uai_game_with_recovery(
-        processes,
-        launches,
-        game,
-        time_controls,
-        false,
-        Duration::from_secs(5),
-    )
-}
-
 /// Runs a UAI game with optional bounded process recovery.
-pub(crate) fn play_uai_game_with_recovery(
+pub(crate) fn play_uai_game(
     processes: &mut [EngineProcess],
     launches: &[EngineLaunch],
     mut game: GameState,
@@ -311,7 +287,7 @@ pub(crate) fn play_uai_game_with_recovery(
     recover: bool,
     startup_timeout: Duration,
 ) -> io::Result<GameResult> {
-    if processes.len() != game.boards().len()
+    if processes.len() != game.get_boards().len()
         || processes.len() != launches.len()
         || processes.len() != time_controls.len()
         || !(2..=4).contains(&processes.len())
@@ -353,7 +329,7 @@ pub(crate) fn play_uai_game_with_recovery(
     }
 
     while !game.is_game_over() {
-        let active_player = *game.active_player();
+        let active_player = game.get_active_player();
         let budget = clocks[active_player].move_budget();
         if budget.is_zero() {
             return Ok(GameResult::Forfeit {
@@ -844,8 +820,7 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 mod tests {
     use super::{
         Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
-        play_uai_game_with_recovery, send_go, send_go_clock, send_go_movetime, send_new_game,
-        send_position, uai_handshake, uai_ready,
+        send_go_clock, send_go_movetime, send_new_game, send_position, uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::{EngineLaunch, EngineProcess};
@@ -1153,13 +1128,21 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Completed(game) => {
                 assert!(game.is_game_over());
                 assert_eq!(game.get_winner(), 0);
-                assert_eq!(game.boards()[0].count_horizontal_lines(), 1);
+                assert_eq!(game.get_boards()[0].count_horizontal_lines(), 1);
             }
             super::GameResult::Forfeit { failure, .. } => {
                 panic!("unexpected forfeit: {failure:?}")
@@ -1237,7 +1220,7 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(5_000), TimeControl::Fixed(5_000)];
-        let result = play_uai_game_with_recovery(
+        let result = play_uai_game(
             &mut processes,
             &launches,
             game,
@@ -1270,7 +1253,15 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Forfeit { failure, .. } => {
@@ -1294,7 +1285,15 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(10), TimeControl::Fixed(10)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Forfeit { failure, .. } => {
@@ -1331,7 +1330,7 @@ mod tests {
         );
 
         let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
-        send_go(&mut process).unwrap();
+        process.send_line("go").unwrap();
         assert_eq!(
             process.recv_stdout(Duration::from_secs(1)).unwrap(),
             Some(String::from("go"))

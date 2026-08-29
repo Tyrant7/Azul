@@ -24,15 +24,29 @@
 pub type Tile = usize;
 
 /// Generates read-only reference getters for the listed fields.
-macro_rules! getters {
+macro_rules! ref_getters {
     ($($field:ident : $ty:ty), *$(,)?) => {
-        $(
-            #[doc = concat!("Returns a reference to the `", stringify!($field), "` field.")]
-            pub fn $field(&self) -> &$ty {
-                &self.$field
-            }
-        )*
-    }
+        paste::paste! {
+            $(
+                pub fn [<get_$field>](&self) -> &$ty {
+                    &self.$field
+                }
+            )*
+        }
+    };
+}
+
+/// Generates read-only value getters for the listed fields.
+macro_rules! value_getters {
+    ($($field:ident : $ty:ty), *$(,)?) => {
+        paste::paste! {
+            $(
+                pub fn [<get_$field>](&self) -> $ty {
+                    self.$field
+                }
+            )*
+        }
+    };
 }
 
 pub mod board;

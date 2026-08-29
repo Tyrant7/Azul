@@ -52,7 +52,7 @@ impl Bowl {
     }
 
     /// Returns all tiles currently in the bowl in sorted order.
-    pub fn tiles(&self) -> &Vec<Tile> {
+    pub fn get_tiles(&self) -> &Vec<Tile> {
         &self.tiles
     }
 }

@@ -165,14 +165,17 @@ impl GameState {
         GameStateBuilder::default()
     }
 
-    getters! {
-        active_player: usize,
+    ref_getters! {
         boards: Vec<Board>,
         bowls: Vec<Bowl>,
         bag: Bag<Tile>,
+    }
+
+    value_getters! {
         first_token_owner: Option<usize>,
-        seed: Option<u64>,
+        active_player: usize,
         discarded_tiles: usize,
+        seed: Option<u64>,
     }
 
     /// Returns the serialized current state of the random generator.
@@ -192,7 +195,7 @@ impl GameState {
             + self
                 .bowls
                 .iter()
-                .map(|bowl| bowl.tiles().len())
+                .map(|bowl| bowl.get_tiles().len())
                 .sum::<usize>()
             + self.boards.iter().map(Board::get_tile_count).sum::<usize>()
             + self.discarded_tiles
@@ -220,7 +223,7 @@ impl GameState {
                     used_tiles.extend(board.get_active_tiles());
                 }
                 for bowl in bowls.iter() {
-                    used_tiles.extend(bowl.tiles().iter().copied());
+                    used_tiles.extend(bowl.get_tiles().iter().copied());
                 }
                 used_tiles.extend(next.iter().copied());
                 let mut unused_tiles = Vec::new();

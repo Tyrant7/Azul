@@ -1,5 +1,8 @@
 # TODO
 
+## Movegen Cleanup
+- Fix awkward bowl/centre shared data
+
 ## Interface
 - Complete UAI command dispatch with diagnostics, recovery, and tournament integration
   - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
@@ -36,6 +39,7 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 - Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
 - Add batched and vectorized environments for parallel rollouts
 - Add deterministic seeded resets and replayable episode seeds
+- Implement the environment-facing observation encoder, action mapper, reward signal, and replay buffer scaffolding for Azul
 ### Rules and environment validation
 - Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
 - Add golden tests for legal-action masks and observation encodings
@@ -44,19 +48,31 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 - Add short deterministic smoke episodes and a random-policy baseline
 - Add performance benchmarks for reset, step, legal moves, cloning, serialization, and batched stepping
 
-1. **Add an end-to-end smoke test.** Build the random engine, start two to four
-	 copies through `interface`, play a seeded game, and assert a terminal result.
-2. **Separate interface setup from match execution.** Wire `--dry-run`,
-	 `--check-engines`, engine names, `--out`, and clean startup/handshake errors;
-	 remove the debug `Cli` dump and `expect`-based process failures.
-3. **Implement the first real time-control path.** Start with fixed
-	 per-move time (`st`), enforce a deadline around `go`, then add increment
-	 clocks. Define timeout and forfeiture behavior in the protocol docs.
-4. **Connect diagnostics and recovery.** Surface stderr, debug/log output,
-	 child exit status, and protocol errors; make `--recover` restart a crashed
-	 engine only at a well-defined game boundary.
+### Baselines and agents
+- Add a deterministic heuristic baseline for measuring learning progress
+- Define a policy/value agent interface independent of a particular neural-network framework
+- Implement action selection with legal-action masking, temperature, exploration, and evaluation modes
+- Choose and implement the initial learning algorithm (for example PPO, or policy/value self-play with MCTS)
+- Support self-play with alternating player perspectives and correct credit assignment across turns and rounds
+- Add optional opponent pools, fixed checkpoints, and exploitability-style evaluation
 
-## Phase 1: Usable engine harness
+### Immediate next milestone
+- Implement the complete PPO baseline on top of the finalized environment contract.
+- Use a simple two-player shared-policy setup with player-relative observations, legal-action masking, and win/loss or score-difference rewards.
+- Add deterministic evaluation against random and heuristic baselines before introducing self-play or deeper search.
+- Only after the PPO baseline is stable, explore MCTS or AlphaZero-style search on top of the learned policy/value model.
+
+### Model and training runtime
+- Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
+- Implement observation encoding, policy logits, value prediction, and batched inference
+- Implement loss functions, optimizer, gradient clipping, learning-rate schedules, and entropy/value-loss weighting
+- Implement rollout workers and an actor/learner data path
+- Support configurable parallel environments, inference batches, rollout length, and update frequency
+- Add checkpoint save/load for model weights, optimizer state, scheduler state, counters, configuration, and RNG state
+- Add checkpoint compatibility/versioning and a way to resume interrupted training
+- Add replay or trajectory storage with episode IDs, observations, actions, masks, rewards, values, log-probabilities, and terminal flags
+- Add generalized advantage estimation or the equivalent return/target calculation for the selected algorithm
+- Add replay-buffer capacity, sampling, prioritization, persistence, and cleanup if the selected algorithm needs replay
 
 - Complete UAI command handling and document the command/response grammar.
 - Add fixture-engine integration tests for handshake, readiness, full games,

@@ -1,9 +1,39 @@
+use std::ops::{Add, Div};
+
 use rand::seq::IndexedRandom;
 
-use azul_movegen::{GameState, Move};
+use azul_movegen::{Bowl, GameState, Move};
 use tch::Tensor;
 
 fn encode_gamestate(gamestate: &GameState) -> Tensor {
+    let bowls = gamestate.get_bowls();
+    let boards = gamestate.get_boards();
+    let encoded_bowls = encode_bowls(bowls);
+    let encoded_boards = encode_boards(&boards);
+    Tensor::cat(&[encoded_bowls, encoded_boards], 0)
+}
+
+fn encode_bowls(bowls: &Vec<Bowl>) -> Tensor {
+    // Max bowls including floor, with 1 space normalized per tile-type per bowl
+    let size = (2 * 4 + 2) * 5;
+    let encoded_bowls = Tensor::zeros(size, (tch::Kind::Float, get_device()));
+    for (bowl_index, bowl) in bowls.iter().enumerate() {
+        for tile_type in bowl.get_tiles().iter() {
+            let index = bowl_index * 5 + tile_type;
+            encoded_bowls.get(index as i64).add(1.);
+        }
+    }
+
+    // Normalize by tiles by bowl
+    encoded_bowls.i(5..).div(4.);
+
+    // Centre can hold up to 20 tiles of one type
+    encoded_bowls.i(0..5).div(20.);
+
+    encoded_bowls
+}
+
+fn encode_boards(boards: &[Board]) -> Tensor {
     unimplemented!()
 }
 
@@ -69,7 +99,21 @@ impl AzulEnv {
     }
 
     fn map_action(action: usize) -> Move {
-        unimplemented!()
+        // bowl in [0, 9], in a 4 player game
+        // tile_type in [0, 4]
+        // row in [0, 5] (0 = floor, 1-5 = wall)
+        // so action in [0, 9*5*6) = [0, 270)
+        let bowl = action / (5 * 6);
+        let tile_type = (action / 6) % 5;
+        let row = match action % 6 {
+            0 => azul_movegen::row::Row::Floor,
+            n => azul_movegen::row::Row::Wall(n - 1),
+        };
+        Move {
+            bowl,
+            tile_type,
+            row,
+        }
     }
 
     pub fn get_gamestate(&self) -> &GameState {

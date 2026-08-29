@@ -32,10 +32,13 @@ impl Board {
         BoardBuilder::default()
     }
 
-    getters! {
+    ref_getters! {
         holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         bonuses: BonusTypes,
+    }
+
+    value_getters! {
         penalties: usize,
         penalty_tiles: usize,
         score: usize,
@@ -285,11 +288,6 @@ impl Board {
             .iter()
             .filter(|row| row.iter().all(|x| x.is_some()))
             .count()
-    }
-
-    /// Returns the board's current score.
-    pub fn get_score(&self) -> usize {
-        self.score
     }
 
     /// Returns the tile type assigned to a zero-based wall position.
