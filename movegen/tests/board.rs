@@ -8,14 +8,14 @@ use common::{board_with_placed, empty_grid, full_column, full_row};
 fn default_board_has_empty_state() {
     let board = Board::default();
 
-    assert_eq!(board.holds(), &empty_grid());
-    assert_eq!(board.placed(), &empty_grid());
-    assert_eq!(board.bonuses().rows, [false; BOARD_DIMENSION]);
-    assert_eq!(board.bonuses().columns, [false; BOARD_DIMENSION]);
-    assert_eq!(board.bonuses().tile_types, [false; BOARD_DIMENSION]);
-    assert_eq!(*board.penalties(), 0);
-    assert_eq!(*board.penalty_tiles(), 0);
-    assert_eq!(*board.score(), 0);
+    assert_eq!(board.get_holds(), &empty_grid());
+    assert_eq!(board.get_placed(), &empty_grid());
+    assert_eq!(board.get_bonuses().rows, [false; BOARD_DIMENSION]);
+    assert_eq!(board.get_bonuses().columns, [false; BOARD_DIMENSION]);
+    assert_eq!(board.get_bonuses().tile_types, [false; BOARD_DIMENSION]);
+    assert_eq!(*board.get_penalties(), 0);
+    assert_eq!(*board.get_penalty_tiles(), 0);
+    assert_eq!(*board.get_score(), 0);
 }
 
 #[test]
@@ -38,14 +38,14 @@ fn builder_sets_all_board_fields() {
         .score(12)
         .build();
 
-    assert_eq!(*board.holds(), holds);
-    assert_eq!(*board.placed(), placed);
-    assert_eq!(board.bonuses().rows, bonuses.rows);
-    assert_eq!(board.bonuses().columns, bonuses.columns);
-    assert_eq!(board.bonuses().tile_types, bonuses.tile_types);
-    assert_eq!(*board.penalties(), 3);
-    assert_eq!(*board.penalty_tiles(), 3);
-    assert_eq!(*board.score(), 12);
+    assert_eq!(*board.get_holds(), holds);
+    assert_eq!(*board.get_placed(), placed);
+    assert_eq!(board.get_bonuses().rows, bonuses.rows);
+    assert_eq!(board.get_bonuses().columns, bonuses.columns);
+    assert_eq!(board.get_bonuses().tile_types, bonuses.tile_types);
+    assert_eq!(*board.get_penalties(), 3);
+    assert_eq!(*board.get_penalty_tiles(), 3);
+    assert_eq!(*board.get_score(), 12);
 }
 
 #[test]
@@ -102,10 +102,10 @@ fn hold_tiles_fills_pattern_lines_and_rejects_conflicts() {
 
     board.hold_tiles(2, 3, Row::Wall(2), 0).unwrap();
     assert_eq!(
-        board.holds()[2].to_vec(),
+        board.get_holds()[2].to_vec(),
         vec![Some(2), Some(2), Some(2), None, None]
     );
-    assert_eq!(*board.penalties(), 0);
+    assert_eq!(*board.get_penalties(), 0);
 
     assert!(board.hold_tiles(3, 1, Row::Wall(2), 0).is_err());
     assert!(
@@ -121,15 +121,15 @@ fn hold_tiles_sends_overflow_and_floor_tiles_to_penalties() {
     board.hold_tiles(1, 3, Row::Wall(0), 0).unwrap();
 
     assert_eq!(
-        board.holds()[0].to_vec(),
+        board.get_holds()[0].to_vec(),
         vec![Some(1), None, None, None, None]
     );
-    assert_eq!(*board.penalties(), 2);
-    assert_eq!(*board.penalty_tiles(), 2);
+    assert_eq!(*board.get_penalties(), 2);
+    assert_eq!(*board.get_penalty_tiles(), 2);
 
     board.hold_tiles(4, 3, Row::Floor, 0).unwrap();
-    assert_eq!(*board.penalties(), 5);
-    assert_eq!(*board.penalty_tiles(), 5);
+    assert_eq!(*board.get_penalties(), 5);
+    assert_eq!(*board.get_penalty_tiles(), 5);
 }
 
 #[test]
@@ -140,10 +140,10 @@ fn hold_tiles_fills_empty_slots_in_partially_filled_lines() {
     board.hold_tiles(2, 2, Row::Wall(2), 0).unwrap();
 
     assert_eq!(
-        board.holds()[2].to_vec(),
+        board.get_holds()[2].to_vec(),
         vec![Some(2), Some(2), Some(2), None, None]
     );
-    assert_eq!(*board.penalty_tiles(), 0);
+    assert_eq!(*board.get_penalty_tiles(), 0);
 }
 
 #[test]
@@ -152,8 +152,8 @@ fn place_holds_reports_physical_tiles_but_not_the_first_player_token() {
     board.hold_tiles(1, 2, Row::Floor, 1).unwrap();
 
     assert_eq!(board.place_holds(), 2);
-    assert_eq!(*board.penalties(), 0);
-    assert_eq!(*board.penalty_tiles(), 0);
+    assert_eq!(*board.get_penalties(), 0);
+    assert_eq!(*board.get_penalty_tiles(), 0);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn penalty_scoring_matches_the_floor_table_and_caps_after_seven_spaces() {
 
         board.place_holds();
 
-        assert_eq!(board.get_score(), 100 - expected_penalty);
+        assert_eq!(*board.get_score(), 100 - expected_penalty);
     }
 }
 
@@ -176,7 +176,7 @@ fn first_player_token_occupies_a_scoring_space_but_is_not_a_tile() {
     board.hold_tiles(0, 2, Row::Floor, 1).unwrap();
 
     assert_eq!(board.place_holds(), 2);
-    assert_eq!(board.get_score(), 6);
+    assert_eq!(*board.get_score(), 6);
 }
 
 #[test]
@@ -186,8 +186,8 @@ fn multiple_completed_pattern_lines_score_and_clear_together() {
     board.hold_tiles(0, 2, Row::Wall(1), 0).unwrap();
 
     assert_eq!(board.place_holds(), 1);
-    assert_eq!(board.get_score(), 2);
-    assert!(board.holds().iter().flatten().all(Option::is_none));
+    assert_eq!(*board.get_score(), 2);
+    assert!(board.get_holds().iter().flatten().all(Option::is_none));
 }
 
 #[test]
@@ -205,9 +205,9 @@ fn one_placement_can_award_row_and_tile_type_bonuses_together() {
     let mut board = Board::builder().placed(placed).holds(holds).build();
     board.place_holds();
 
-    assert_eq!(board.get_score(), 17);
-    assert!(board.bonuses().rows[0]);
-    assert!(board.bonuses().tile_types[0]);
+    assert_eq!(*board.get_score(), 17);
+    assert!(board.get_bonuses().rows[0]);
+    assert!(board.get_bonuses().tile_types[0]);
 }
 
 #[test]
@@ -217,9 +217,9 @@ fn place_holds_scores_an_isolated_tile_and_clears_the_pattern_line() {
 
     board.place_holds();
 
-    assert_eq!(board.placed()[0][0], Some(0));
-    assert!(board.holds()[0].iter().all(Option::is_none));
-    assert_eq!(board.get_score(), 1);
+    assert_eq!(board.get_placed()[0][0], Some(0));
+    assert!(board.get_holds()[0].iter().all(Option::is_none));
+    assert_eq!(*board.get_score(), 1);
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn place_holds_scores_horizontal_vertical_and_combined_lines() {
         .holds(horizontal_holds)
         .build();
     horizontal.place_holds();
-    assert_eq!(horizontal.get_score(), 2);
+    assert_eq!(*horizontal.get_score(), 2);
 
     let mut vertical_placed = empty_grid();
     vertical_placed[1][0] = Some(4);
@@ -244,7 +244,7 @@ fn place_holds_scores_horizontal_vertical_and_combined_lines() {
         .holds(vertical_holds)
         .build();
     vertical.place_holds();
-    assert_eq!(vertical.get_score(), 2);
+    assert_eq!(*vertical.get_score(), 2);
 
     let mut both_placed = empty_grid();
     both_placed[0][1] = Some(1);
@@ -256,7 +256,7 @@ fn place_holds_scores_horizontal_vertical_and_combined_lines() {
         .holds(both_holds)
         .build();
     both.place_holds();
-    assert_eq!(both.get_score(), 4);
+    assert_eq!(*both.get_score(), 4);
 }
 
 #[test]
@@ -267,10 +267,10 @@ fn place_holds_awards_row_column_and_tile_type_bonuses_once() {
     row_holds[0][0] = Some(4);
     let mut row_board = Board::builder().placed(row_placed).holds(row_holds).build();
     row_board.place_holds();
-    assert_eq!(row_board.get_score(), 7);
-    assert!(row_board.bonuses().rows[0]);
+    assert_eq!(*row_board.get_score(), 7);
+    assert!(row_board.get_bonuses().rows[0]);
     row_board.place_holds();
-    assert_eq!(row_board.get_score(), 7);
+    assert_eq!(*row_board.get_score(), 7);
 
     let mut column_placed = full_column(0);
     column_placed[0][0] = None;
@@ -281,8 +281,8 @@ fn place_holds_awards_row_column_and_tile_type_bonuses_once() {
         .holds(column_holds)
         .build();
     column_board.place_holds();
-    assert_eq!(column_board.get_score(), 12);
-    assert!(column_board.bonuses().columns[0]);
+    assert_eq!(*column_board.get_score(), 12);
+    assert!(column_board.get_bonuses().columns[0]);
 
     let mut tile_type_placed = empty_grid();
     for row in 1..BOARD_DIMENSION {
@@ -295,8 +295,8 @@ fn place_holds_awards_row_column_and_tile_type_bonuses_once() {
         .holds(tile_type_holds)
         .build();
     tile_type_board.place_holds();
-    assert_eq!(tile_type_board.get_score(), 11);
-    assert!(tile_type_board.bonuses().tile_types[0]);
+    assert_eq!(*tile_type_board.get_score(), 11);
+    assert!(tile_type_board.get_bonuses().tile_types[0]);
 }
 
 #[test]
@@ -306,8 +306,8 @@ fn place_holds_applies_penalties_with_saturating_score() {
 
     board.place_holds();
 
-    assert_eq!(board.get_score(), 2);
-    assert_eq!(*board.penalties(), 0);
+    assert_eq!(*board.get_score(), 2);
+    assert_eq!(*board.get_penalties(), 0);
 }
 
 #[test]

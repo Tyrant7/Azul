@@ -24,12 +24,12 @@ fn custom_state(boards: Vec<Board>, bowls: Vec<Bowl>) -> GameState {
 fn new_creates_the_expected_components() {
     let state = GameState::new(2, 42).unwrap();
 
-    assert_eq!(*state.active_player(), 0);
-    assert_eq!(state.boards().len(), 2);
-    assert_eq!(state.bowls().len(), 6);
-    assert_eq!(state.bag().items().len(), 100);
-    assert_eq!(*state.first_token_owner(), None);
-    assert_eq!(*state.discarded_tiles(), 0);
+    assert_eq!(*state.get_active_player(), 0);
+    assert_eq!(state.get_boards().len(), 2);
+    assert_eq!(state.get_bowls().len(), 6);
+    assert_eq!(state.get_bag().items().len(), 100);
+    assert_eq!(*state.get_first_token_owner(), None);
+    assert_eq!(*state.get_discarded_tiles(), 0);
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(state.round_over());
 }
@@ -39,8 +39,8 @@ fn new_supports_two_three_and_four_players() {
     for players in 2..=4 {
         let state = GameState::new(players, 42).unwrap();
 
-        assert_eq!(state.boards().len(), players);
-        assert_eq!(state.bowls().len(), players * 2 + 2);
+        assert_eq!(state.get_boards().len(), players);
+        assert_eq!(state.get_bowls().len(), players * 2 + 2);
     }
 }
 
@@ -108,20 +108,20 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
     first.setup_next_round();
     second.setup_next_round();
 
-    assert_eq!(*first.active_player(), 0);
-    assert_eq!(first.bowls()[0].tiles(), &Vec::<Tile>::new());
+    assert_eq!(*first.get_active_player(), 0);
+    assert_eq!(first.get_bowls()[0].tiles(), &Vec::<Tile>::new());
     assert!(
         first
-            .bowls()
+            .get_bowls()
             .iter()
             .skip(1)
             .all(|bowl| bowl.tiles().len() == 4)
     );
-    assert_eq!(first.bag().items().len(), 80);
+    assert_eq!(first.get_bag().items().len(), 80);
     assert_eq!(first.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(!first.round_over());
-    assert_eq!(first.bag().items(), second.bag().items());
-    for (first_bowl, second_bowl) in first.bowls().iter().zip(second.bowls()) {
+    assert_eq!(first.get_bag().items(), second.get_bag().items());
+    for (first_bowl, second_bowl) in first.get_bowls().iter().zip(second.get_bowls()) {
         assert_eq!(first_bowl.tiles(), second_bowl.tiles());
     }
 }
@@ -132,13 +132,13 @@ fn valid_moves_include_each_tile_type_and_all_destinations() {
     state.setup_next_round();
     let moves = state.get_valid_moves();
     let expected_count: usize = state
-        .bowls()
+        .get_bowls()
         .iter()
         .map(|bowl| bowl.get_tile_types().len() * (BOARD_DIMENSION + 1))
         .sum();
 
     assert_eq!(moves.len(), expected_count);
-    for (bowl_index, bowl) in state.bowls().iter().enumerate() {
+    for (bowl_index, bowl) in state.get_bowls().iter().enumerate() {
         for tile_type in bowl.get_tile_types() {
             for row in (0..BOARD_DIMENSION)
                 .map(Row::Wall)
@@ -159,8 +159,8 @@ fn make_move_updates_board_bowls_and_active_player() {
     let mut state = GameState::new(2, 12).unwrap();
     state.setup_next_round();
     let chosen_bowl = 1;
-    let chosen_tile = state.bowls()[chosen_bowl].tiles()[0];
-    let remaining_count = state.bowls()[chosen_bowl]
+    let chosen_tile = state.get_bowls()[chosen_bowl].tiles()[0];
+    let remaining_count = state.get_bowls()[chosen_bowl]
         .tiles()
         .iter()
         .filter(|&&tile| tile != chosen_tile)
@@ -174,10 +174,14 @@ fn make_move_updates_board_bowls_and_active_player() {
         })
         .unwrap();
 
-    assert_eq!(*state.active_player(), 1);
-    assert_eq!(state.boards()[0].holds()[0][0], Some(chosen_tile));
-    assert!(!state.bowls()[chosen_bowl].tiles().contains(&chosen_tile));
-    assert_eq!(state.bowls()[0].tiles().len(), remaining_count);
+    assert_eq!(*state.get_active_player(), 1);
+    assert_eq!(state.get_boards()[0].get_holds()[0][0], Some(chosen_tile));
+    assert!(
+        !state.get_bowls()[chosen_bowl]
+            .tiles()
+            .contains(&chosen_tile)
+    );
+    assert_eq!(state.get_bowls()[0].tiles().len(), remaining_count);
 }
 
 #[test]
@@ -192,7 +196,7 @@ fn illegal_move_is_rejected_without_advancing_the_turn() {
     });
 
     assert!(result.is_err());
-    assert_eq!(*state.active_player(), 0);
+    assert_eq!(*state.get_active_player(), 0);
 }
 
 #[test]
@@ -209,9 +213,9 @@ fn first_centre_pick_assigns_the_token_and_penalty() {
         })
         .unwrap();
 
-    assert_eq!(*state.first_token_owner(), Some(0));
-    assert_eq!(*state.boards()[0].penalties(), 2);
-    assert_eq!(*state.active_player(), 1);
+    assert_eq!(*state.get_first_token_owner(), Some(0));
+    assert_eq!(*state.get_boards()[0].get_penalties(), 2);
+    assert_eq!(*state.get_active_player(), 1);
 }
 
 #[test]
@@ -274,7 +278,7 @@ fn setup_tracks_discarded_tiles_without_counting_the_token() {
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
     state.setup_next_round();
 
-    assert_eq!(*state.discarded_tiles(), 2);
+    assert_eq!(*state.get_discarded_tiles(), 2);
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
 }
 
@@ -300,19 +304,19 @@ fn restocking_excludes_tiles_already_dealt_during_setup() {
 
     let mut counts = [0; BOARD_DIMENSION];
     for tile in state
-        .bag()
+        .get_bag()
         .items()
         .iter()
         .copied()
         .chain(
             state
-                .bowls()
+                .get_bowls()
                 .iter()
                 .flat_map(|bowl| bowl.tiles().iter().copied()),
         )
         .chain(
             state
-                .boards()
+                .get_boards()
                 .iter()
                 .flat_map(|board| board.get_active_tiles()),
         )
@@ -358,11 +362,11 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
 
     state.setup_next_round();
 
-    assert_eq!(*state.active_player(), 1);
-    assert_eq!(*state.first_token_owner(), None);
+    assert_eq!(*state.get_active_player(), 1);
+    assert_eq!(*state.get_first_token_owner(), None);
     assert!(
         state
-            .bowls()
+            .get_bowls()
             .iter()
             .skip(1)
             .all(|bowl| bowl.tiles().len() == 4)
@@ -387,11 +391,11 @@ fn builder_preserves_explicit_state() {
         .build()
         .unwrap();
 
-    assert_eq!(*state.active_player(), 0);
-    assert_eq!(state.boards().len(), 2);
-    assert_eq!(state.bowls()[0].tiles(), &vec![4]);
-    assert_eq!(state.bag().items(), &expected_bag);
-    assert_eq!(*state.first_token_owner(), Some(0));
+    assert_eq!(*state.get_active_player(), 0);
+    assert_eq!(state.get_boards().len(), 2);
+    assert_eq!(state.get_bowls()[0].tiles(), &vec![4]);
+    assert_eq!(state.get_bag().items(), &expected_bag);
+    assert_eq!(*state.get_first_token_owner(), Some(0));
 }
 
 #[test]

@@ -287,11 +287,6 @@ impl Board {
             .count()
     }
 
-    /// Returns the board's current score.
-    pub fn get_score(&self) -> usize {
-        self.score
-    }
-
     /// Returns the tile type assigned to a zero-based wall position.
     pub fn get_tile_type_at_pos(row: usize, col: usize) -> Tile {
         ((col + BOARD_DIMENSION - row) % BOARD_DIMENSION) as Tile
