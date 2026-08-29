@@ -5,11 +5,13 @@ use std::{
 
 use rand::seq::IndexedRandom;
 
-use azul_movegen::{Bag, Board, Bowl, GameState, Move};
+use azul_movegen::{Bag, Board, Bowl, GameState, Move, board};
 use tch::Tensor;
 
+const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const MAX_PLAYERS: usize = 4;
 const TILE_TYPES: usize = 5;
+const REWARD_SCALE: f32 = 1.0;
 
 fn encode_gamestate(gamestate: &GameState) -> Tensor {
     let encoded_bowls = encode_bowls(gamestate.get_bowls());
@@ -52,7 +54,7 @@ fn encode_bowls(bowls: &Vec<Bowl>) -> Tensor {
 
 fn encode_boards(boards: &[Board]) -> Tensor {
     // Board occupancy map -> 5 rows and 5 cols, with 5 tiletypes
-    let occupancy_size = 5 * 5 * TILE_TYPES;
+    let occupancy_size = BOARD_SIZE * BOARD_SIZE * TILE_TYPES;
     // Holds -> one-hot on tile type plus a normalized fullness
     let holds_size = TILE_TYPES + 1;
     // Penalties -> single normalized value
@@ -60,16 +62,16 @@ fn encode_boards(boards: &[Board]) -> Tensor {
     // Score -> single scaled relative-scoring value between this board and each other board
     let score_size = MAX_PLAYERS;
     // Bonus types -> 5 rows, 5 cols, and 5 tiletypes
-    let bonus_types_size = 5 * 5 * TILE_TYPES;
+    let bonus_types_size = BOARD_SIZE * BOARD_SIZE * TILE_TYPES;
 
-    let encoded_boards = Vec<Tensor>::with_capacity(boards.len());
+    let encoded_boards = Vec::<Tensor>::with_capacity(boards.len());
     for board in boards {
         // Occupancy
         let encoded_occupancy = Tensor::zeros(occupancy_size, (tch::Kind::Float, get_device()));
         for (row_index, row) in board.get_placed().iter().enumerate() {
             for (col_index, tile) in row.iter().enumerate() {
                 if let Some(tile) = tile {
-                    let index = row_index * 5 * TILE_TYPES + col_index * TILE_TYPES + tile;
+                    let index = row_index * BOARD_SIZE * TILE_TYPES + col_index * TILE_TYPES + tile;
                     encoded_boards.get(index as i64).add(1.);
                 }
             }
@@ -123,8 +125,7 @@ fn encode_boards(boards: &[Board]) -> Tensor {
         ));
     }
 
-    Tensor::from_slice(encoded_boards.collect::<Vec<Tensor>>())
-        .to_device(get_device())
+    Tensor::from_slice(encoded_boards.collect::<Vec<Tensor>>()).to_device(get_device())
 }
 
 fn encode_bag(bag: &Bag) -> Tensor {
@@ -141,8 +142,18 @@ fn encode_bag(bag: &Bag) -> Tensor {
     encoded_bag
 }
 
-fn calculate_reward(gamestate: &GameState) -> f32 {
-    unimplemented!()
+fn calculate_reward(score_deltas: Vec<usize>, active_player: usize) -> f32 {
+    // Max score delta of opponents
+    let max_opp_score = score_deltas
+        .iter()
+        .enumerate()
+        .fold(0usize, |acc, (player, &delta)| {
+            if player == active_player {
+                return acc;
+            }
+            if delta > acc { delta } else { acc }
+        });
+    (score_deltas[active_player] as f32 - max_opp_score as f32) * REWARD_SCALE
 }
 
 fn get_device() -> tch::Device {
@@ -194,9 +205,36 @@ impl AzulEnv {
         self.steps += 1;
         let terminated = self.gamestate.is_game_over();
         let truncated = !terminated && self.steps >= self.max_steps;
+
+        let before_scores = self
+            .gamestate
+            .get_boards()
+            .iter()
+            .map(|b| b.get_score())
+            .collect();
+
+        let score_deltas = if self.gamestate.round_over() {
+            self.gamestate.setup_next_round();
+
+            let after_scores = self
+                .gamestate
+                .get_boards()
+                .iter()
+                .map(|b| b.get_score())
+                .collect();
+
+            after_scores
+                .iter()
+                .zip(before_scores.iter())
+                .map(|(after, before)| after - before)
+                .collect()
+        } else {
+            vec![0; MAX_PLAYERS]
+        };
+
         StepResult {
             next_state: encode_gamestate(&self.gamestate),
-            reward: calculate_reward(&self.gamestate),
+            reward: calculate_reward(score_deltas, self.gamestate.get_active_player()),
             terminated,
             truncated,
         }
