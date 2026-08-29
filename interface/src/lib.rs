@@ -120,7 +120,7 @@ pub fn run() {
                     .expect("engine time control must be configured")
             })
             .collect::<Vec<_>>();
-        match protocol::play_uai_game_with_recovery(
+        match protocol::play_uai_game(
             &mut engines,
             &launches,
             gamestate,

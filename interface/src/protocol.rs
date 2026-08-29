@@ -279,7 +279,7 @@ pub(crate) enum GameResult {
 const MAX_RESTARTS_PER_ENGINE: usize = 1;
 
 /// Runs a UAI game with optional bounded process recovery.
-pub(crate) fn play_uai_game_with_recovery(
+pub(crate) fn play_uai_game(
     processes: &mut [EngineProcess],
     launches: &[EngineLaunch],
     mut game: GameState,
@@ -819,9 +819,8 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move,
-        play_uai_game_with_recovery, send_go_clock, send_go_movetime, send_new_game, send_position,
-        uai_handshake, uai_ready,
+        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
+        send_go_clock, send_go_movetime, send_new_game, send_position, uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::{EngineLaunch, EngineProcess};
@@ -1129,7 +1128,7 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game_with_recovery(
+        let result = play_uai_game(
             &mut processes,
             &launches,
             game,
@@ -1221,7 +1220,7 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(5_000), TimeControl::Fixed(5_000)];
-        let result = play_uai_game_with_recovery(
+        let result = play_uai_game(
             &mut processes,
             &launches,
             game,
@@ -1254,7 +1253,7 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game_with_recovery(
+        let result = play_uai_game(
             &mut processes,
             &launches,
             game,
@@ -1286,7 +1285,7 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(10), TimeControl::Fixed(10)];
-        let result = play_uai_game_with_recovery(
+        let result = play_uai_game(
             &mut processes,
             &launches,
             game,
