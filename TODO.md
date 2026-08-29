@@ -1,5 +1,8 @@
 # TODO
 
+## Movegen Cleanup
+- Fix awkward bowl/centre shared data
+
 ## Interface
 - Complete UAI command dispatch with diagnostics, recovery, and tournament integration
   - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
