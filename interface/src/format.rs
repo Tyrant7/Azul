@@ -156,10 +156,10 @@ impl ProtocolFormat for Board {
 
 impl ProtocolFormat for Bowl {
     fn fmt_human(&self) -> String {
-        if self.tiles().is_empty() {
+        if self.get_tiles().is_empty() {
             return String::from("-");
         }
-        self.tiles().iter().map(|t| t.to_string()).collect()
+        self.get_tiles().iter().map(|t| t.to_string()).collect()
     }
 
     fn fmt_uci_like(&self) -> String {

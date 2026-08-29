@@ -444,7 +444,7 @@ mod tests {
 
         assert_eq!(parsed.get_bag().items(), original.get_bag().items());
         for (parsed_bowl, original_bowl) in parsed.get_bowls().iter().zip(original.get_bowls()) {
-            assert_eq!(parsed_bowl.tiles(), original_bowl.tiles());
+            assert_eq!(parsed_bowl.get_tiles(), original_bowl.get_tiles());
         }
         assert_eq!(parsed.rng_state(), original.rng_state());
         assert_eq!(parsed.to_azul_fen(), original.to_azul_fen());
