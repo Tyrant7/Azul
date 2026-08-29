@@ -239,6 +239,7 @@ impl EngineProcess {
     }
 
     /// Reads one diagnostic line from stderr, waiting up to `timeout`.
+    #[allow(dead_code)]
     pub(crate) fn recv_stderr(&mut self, timeout: Duration) -> io::Result<Option<String>> {
         match receive_line(&self.stderr, timeout)? {
             Some(line) => {
@@ -266,11 +267,6 @@ impl EngineProcess {
             diagnostics.record(self.engine_index, "stderr", line)?;
         }
         Ok(())
-    }
-
-    /// Returns the child exit status when it has exited without blocking.
-    pub(crate) fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.try_wait()
     }
 
     /// Requests graceful shutdown and then waits up to `timeout` for exit.
@@ -428,10 +424,10 @@ mod tests {
 
         assert_eq!(process.recv_stdout(short_timeout()).unwrap(), None);
         let deadline = std::time::Instant::now() + short_timeout();
-        while process.try_wait().unwrap().is_none() && std::time::Instant::now() < deadline {
+        while process.child.try_wait().unwrap().is_none() && std::time::Instant::now() < deadline {
             std::thread::yield_now();
         }
-        assert!(process.try_wait().unwrap().is_some());
+        assert!(process.child.try_wait().unwrap().is_some());
     }
 
     #[test]
