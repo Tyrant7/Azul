@@ -109,20 +109,20 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
     second.setup_next_round();
 
     assert_eq!(first.get_active_player(), 0);
-    assert_eq!(first.get_bowls()[0].tiles(), &Vec::<Tile>::new());
+    assert_eq!(first.get_bowls()[0].get_tiles(), &Vec::<Tile>::new());
     assert!(
         first
             .get_bowls()
             .iter()
             .skip(1)
-            .all(|bowl| bowl.tiles().len() == 4)
+            .all(|bowl| bowl.get_tiles().len() == 4)
     );
     assert_eq!(first.get_bag().items().len(), 80);
     assert_eq!(first.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(!first.round_over());
     assert_eq!(first.get_bag().items(), second.get_bag().items());
     for (first_bowl, second_bowl) in first.get_bowls().iter().zip(second.get_bowls()) {
-        assert_eq!(first_bowl.tiles(), second_bowl.tiles());
+        assert_eq!(first_bowl.get_tiles(), second_bowl.get_tiles());
     }
 }
 
@@ -159,9 +159,9 @@ fn make_move_updates_board_bowls_and_active_player() {
     let mut state = GameState::new(2, 12).unwrap();
     state.setup_next_round();
     let chosen_bowl = 1;
-    let chosen_tile = state.get_bowls()[chosen_bowl].tiles()[0];
+    let chosen_tile = state.get_bowls()[chosen_bowl].get_tiles()[0];
     let remaining_count = state.get_bowls()[chosen_bowl]
-        .tiles()
+        .get_tiles()
         .iter()
         .filter(|&&tile| tile != chosen_tile)
         .count();
@@ -178,10 +178,10 @@ fn make_move_updates_board_bowls_and_active_player() {
     assert_eq!(state.get_boards()[0].get_holds()[0][0], Some(chosen_tile));
     assert!(
         !state.get_bowls()[chosen_bowl]
-            .tiles()
+            .get_tiles()
             .contains(&chosen_tile)
     );
-    assert_eq!(state.get_bowls()[0].tiles().len(), remaining_count);
+    assert_eq!(state.get_bowls()[0].get_tiles().len(), remaining_count);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn restocking_excludes_tiles_already_dealt_during_setup() {
             state
                 .get_bowls()
                 .iter()
-                .flat_map(|bowl| bowl.tiles().iter().copied()),
+                .flat_map(|bowl| bowl.get_tiles().iter().copied()),
         )
         .chain(
             state
@@ -369,7 +369,7 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
             .get_bowls()
             .iter()
             .skip(1)
-            .all(|bowl| bowl.tiles().len() == 4)
+            .all(|bowl| bowl.get_tiles().len() == 4)
     );
 }
 
@@ -393,7 +393,7 @@ fn builder_preserves_explicit_state() {
 
     assert_eq!(state.get_active_player(), 0);
     assert_eq!(state.get_boards().len(), 2);
-    assert_eq!(state.get_bowls()[0].tiles(), &vec![4]);
+    assert_eq!(state.get_bowls()[0].get_tiles(), &vec![4]);
     assert_eq!(state.get_bag().items(), &expected_bag);
     assert_eq!(state.get_first_token_owner(), Some(0));
 }
