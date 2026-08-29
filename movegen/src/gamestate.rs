@@ -165,14 +165,17 @@ impl GameState {
         GameStateBuilder::default()
     }
 
-    getters! {
-        active_player: usize,
+    ref_getters! {
         boards: Vec<Board>,
         bowls: Vec<Bowl>,
         bag: Bag<Tile>,
+    }
+
+    value_getters! {
         first_token_owner: Option<usize>,
-        seed: Option<u64>,
+        active_player: usize,
         discarded_tiles: usize,
+        seed: Option<u64>,
     }
 
     /// Returns the serialized current state of the random generator.

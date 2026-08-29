@@ -24,12 +24,12 @@ fn custom_state(boards: Vec<Board>, bowls: Vec<Bowl>) -> GameState {
 fn new_creates_the_expected_components() {
     let state = GameState::new(2, 42).unwrap();
 
-    assert_eq!(*state.get_active_player(), 0);
+    assert_eq!(state.get_active_player(), 0);
     assert_eq!(state.get_boards().len(), 2);
     assert_eq!(state.get_bowls().len(), 6);
     assert_eq!(state.get_bag().items().len(), 100);
-    assert_eq!(*state.get_first_token_owner(), None);
-    assert_eq!(*state.get_discarded_tiles(), 0);
+    assert_eq!(state.get_first_token_owner(), None);
+    assert_eq!(state.get_discarded_tiles(), 0);
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(state.round_over());
 }
@@ -108,7 +108,7 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
     first.setup_next_round();
     second.setup_next_round();
 
-    assert_eq!(*first.get_active_player(), 0);
+    assert_eq!(first.get_active_player(), 0);
     assert_eq!(first.get_bowls()[0].tiles(), &Vec::<Tile>::new());
     assert!(
         first
@@ -174,7 +174,7 @@ fn make_move_updates_board_bowls_and_active_player() {
         })
         .unwrap();
 
-    assert_eq!(*state.get_active_player(), 1);
+    assert_eq!(state.get_active_player(), 1);
     assert_eq!(state.get_boards()[0].get_holds()[0][0], Some(chosen_tile));
     assert!(
         !state.get_bowls()[chosen_bowl]
@@ -196,7 +196,7 @@ fn illegal_move_is_rejected_without_advancing_the_turn() {
     });
 
     assert!(result.is_err());
-    assert_eq!(*state.get_active_player(), 0);
+    assert_eq!(state.get_active_player(), 0);
 }
 
 #[test]
@@ -213,9 +213,9 @@ fn first_centre_pick_assigns_the_token_and_penalty() {
         })
         .unwrap();
 
-    assert_eq!(*state.get_first_token_owner(), Some(0));
-    assert_eq!(*state.get_boards()[0].get_penalties(), 2);
-    assert_eq!(*state.get_active_player(), 1);
+    assert_eq!(state.get_first_token_owner(), Some(0));
+    assert_eq!(state.get_boards()[0].get_penalties(), 2);
+    assert_eq!(state.get_active_player(), 1);
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn setup_tracks_discarded_tiles_without_counting_the_token() {
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
     state.setup_next_round();
 
-    assert_eq!(*state.get_discarded_tiles(), 2);
+    assert_eq!(state.get_discarded_tiles(), 2);
     assert_eq!(state.get_tile_count(), TOTAL_TILE_COUNT);
 }
 
@@ -362,8 +362,8 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
 
     state.setup_next_round();
 
-    assert_eq!(*state.get_active_player(), 1);
-    assert_eq!(*state.get_first_token_owner(), None);
+    assert_eq!(state.get_active_player(), 1);
+    assert_eq!(state.get_first_token_owner(), None);
     assert!(
         state
             .get_bowls()
@@ -391,11 +391,11 @@ fn builder_preserves_explicit_state() {
         .build()
         .unwrap();
 
-    assert_eq!(*state.get_active_player(), 0);
+    assert_eq!(state.get_active_player(), 0);
     assert_eq!(state.get_boards().len(), 2);
     assert_eq!(state.get_bowls()[0].tiles(), &vec![4]);
     assert_eq!(state.get_bag().items(), &expected_bag);
-    assert_eq!(*state.get_first_token_owner(), Some(0));
+    assert_eq!(state.get_first_token_owner(), Some(0));
 }
 
 #[test]

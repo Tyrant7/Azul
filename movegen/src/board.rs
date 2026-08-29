@@ -32,10 +32,13 @@ impl Board {
         BoardBuilder::default()
     }
 
-    getters! {
+    ref_getters! {
         holds: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         placed: [[Option<Tile>; BOARD_DIMENSION]; BOARD_DIMENSION],
         bonuses: BonusTypes,
+    }
+
+    value_getters! {
         penalties: usize,
         penalty_tiles: usize,
         score: usize,

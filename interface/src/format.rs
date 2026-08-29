@@ -27,11 +27,11 @@ impl ProtocolFormat for GameState {
         // Format player boards and turn information.
         output.push_str(&"-".repeat(20));
         output.push('\n');
-        for (i, board) in self.boards().iter().enumerate() {
+        for (i, board) in self.get_boards().iter().enumerate() {
             output.push_str(&format!(
                 "player {}{}",
                 i,
-                if *self.active_player() == i {
+                if self.get_active_player() == i {
                     " (active)"
                 } else {
                     ""
@@ -44,7 +44,7 @@ impl ProtocolFormat for GameState {
         output.push('\n');
 
         // Format factory bowls and the centre area.
-        for (i, bowl) in self.bowls().iter().enumerate() {
+        for (i, bowl) in self.get_bowls().iter().enumerate() {
             output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
         }
         output
@@ -58,7 +58,7 @@ impl ProtocolFormat for GameState {
 impl ProtocolFormat for Board {
     fn fmt_human(&self) -> String {
         let mut output = String::new();
-        for ((h_idx, hold), row) in self.holds().iter().enumerate().zip(self.placed()) {
+        for ((h_idx, hold), row) in self.get_holds().iter().enumerate().zip(self.get_placed()) {
             output.push_str(&(h_idx + 1).to_string());
             output.push_str(&"  ".repeat(BOARD_DIMENSION - h_idx));
             for h in 0..h_idx + 1 {
@@ -80,8 +80,8 @@ impl ProtocolFormat for Board {
             }
             output.push('\n');
         }
-        output.push_str(&format!("score: {}\n", self.score()));
-        output.push_str(&format!("penalties: {}", self.penalties()));
+        output.push_str(&format!("score: {}\n", self.get_score()));
+        output.push_str(&format!("penalties: {}", self.get_penalties()));
         output.push('\n');
         output.push('\n');
         output
@@ -93,7 +93,7 @@ impl ProtocolFormat for Board {
 
         // Encode placed wall tiles with run-length counts for empty spaces.
         let mut counter = 0;
-        for row in self.placed() {
+        for row in self.get_placed() {
             for tile in row {
                 if tile.is_some() {
                     if counter > 0 {
@@ -115,7 +115,7 @@ impl ProtocolFormat for Board {
 
         // Encode pattern lines as tile-type/count pairs.
         output.push(' ');
-        for row in self.holds() {
+        for row in self.get_holds() {
             let mut tiles = row.iter().flatten();
             if let Some(t) = tiles.next() {
                 let count = 1 + tiles.count();
@@ -128,25 +128,25 @@ impl ProtocolFormat for Board {
 
         // Encode collected row, column, and tile-type bonuses.
         output.push(' ');
-        for row in self.bonuses().rows {
+        for row in self.get_bonuses().rows {
             output.push_str(&if row { 1 } else { 0 }.to_string());
         }
         output.push(' ');
-        for column in self.bonuses().columns {
+        for column in self.get_bonuses().columns {
             output.push_str(&if column { 1 } else { 0 }.to_string());
         }
         output.push(' ');
-        for tile_type in self.bonuses().tile_types {
+        for tile_type in self.get_bonuses().tile_types {
             output.push_str(&if tile_type { 1 } else { 0 }.to_string());
         }
 
         // Encode score, occupied penalty spaces, and physical penalty tiles.
         output.push(' ');
-        output.push_str(&self.score().to_string());
+        output.push_str(&self.get_score().to_string());
         output.push(' ');
-        output.push_str(&self.penalties().to_string());
+        output.push_str(&self.get_penalties().to_string());
         output.push(' ');
-        output.push_str(&self.penalty_tiles().to_string());
+        output.push_str(&self.get_penalty_tiles().to_string());
 
         // Terminate the board component.
         output.push_str(" ;");
@@ -211,9 +211,9 @@ mod tests {
         let component = encoded.trim_end_matches(" ;");
         let parsed = Board::from_azul_fen(component).unwrap();
 
-        assert_eq!(parsed.score(), board.score());
-        assert_eq!(parsed.penalties(), board.penalties());
-        assert_eq!(parsed.penalty_tiles(), board.penalty_tiles());
+        assert_eq!(parsed.get_score(), board.get_score());
+        assert_eq!(parsed.get_penalties(), board.get_penalties());
+        assert_eq!(parsed.get_penalty_tiles(), board.get_penalty_tiles());
         assert!(board.fmt_human().contains("score: 12"));
         assert!(board.fmt_human().contains("penalties: 3"));
     }

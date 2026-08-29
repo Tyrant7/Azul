@@ -287,7 +287,7 @@ pub(crate) fn play_uai_game(
     recover: bool,
     startup_timeout: Duration,
 ) -> io::Result<GameResult> {
-    if processes.len() != game.boards().len()
+    if processes.len() != game.get_boards().len()
         || processes.len() != launches.len()
         || processes.len() != time_controls.len()
         || !(2..=4).contains(&processes.len())
@@ -329,7 +329,7 @@ pub(crate) fn play_uai_game(
     }
 
     while !game.is_game_over() {
-        let active_player = *game.active_player();
+        let active_player = game.get_active_player();
         let budget = clocks[active_player].move_budget();
         if budget.is_zero() {
             return Ok(GameResult::Forfeit {
@@ -1142,7 +1142,7 @@ mod tests {
             super::GameResult::Completed(game) => {
                 assert!(game.is_game_over());
                 assert_eq!(game.get_winner(), 0);
-                assert_eq!(game.boards()[0].count_horizontal_lines(), 1);
+                assert_eq!(game.get_boards()[0].count_horizontal_lines(), 1);
             }
             super::GameResult::Forfeit { failure, .. } => {
                 panic!("unexpected forfeit: {failure:?}")

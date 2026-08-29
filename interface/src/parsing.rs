@@ -272,27 +272,27 @@ impl ToAzulFEN for GameState {
         // Serialize board components.
         let mut azul_fen = String::from(AZULFEN_VERSION);
         azul_fen.push(' ');
-        for board in self.boards().iter() {
+        for board in self.get_boards().iter() {
             azul_fen.push_str(&board.fmt_uci_like());
             azul_fen.push(' ');
         }
 
         // Serialize factory bowls and the centre area.
         azul_fen.push_str("| ");
-        for bowl in self.bowls().iter() {
+        for bowl in self.get_bowls().iter() {
             azul_fen.push_str(&bowl.fmt_uci_like());
             azul_fen.push(' ');
         }
 
         // Serialize the remaining tile bag.
         azul_fen.push_str("| ");
-        azul_fen.push_str(&self.bag().fmt_uci_like());
+        azul_fen.push_str(&self.get_bag().fmt_uci_like());
 
         // Serialize turn, token owner, optional seed, and current RNG state.
         azul_fen.push_str(" | ");
-        azul_fen.push_str(&self.active_player().to_string());
+        azul_fen.push_str(&self.get_active_player().to_string());
         azul_fen.push(' ');
-        azul_fen.push_str(&if let Some(t) = self.first_token_owner() {
+        azul_fen.push_str(&if let Some(t) = self.get_first_token_owner() {
             t.to_string()
         } else {
             "-".to_string()
@@ -300,14 +300,14 @@ impl ToAzulFEN for GameState {
         azul_fen.push(' ');
         azul_fen.push_str(
             &self
-                .seed()
+                .get_seed()
                 .map_or_else(|| "-".to_string(), |seed| seed.to_string()),
         );
         azul_fen.push(' ');
         azul_fen.push_str(RNG_STATE_PREFIX);
         azul_fen.push_str(&encode_rng_state(&self.rng_state()));
         azul_fen.push(' ');
-        azul_fen.push_str(&self.discarded_tiles().to_string());
+        azul_fen.push_str(&self.get_discarded_tiles().to_string());
 
         azul_fen.push('\n');
         azul_fen
@@ -352,9 +352,9 @@ mod tests {
             assert!(fen.contains(&format!("| 0 - {seed} xoshiro256plusplus:")));
             let parsed = GameState::from_azul_fen(&fen).unwrap();
 
-            assert_eq!(parsed.boards().len(), players);
-            assert_eq!(parsed.bowls().len(), players * 2 + 2);
-            assert_eq!(*parsed.seed(), Some(seed));
+            assert_eq!(parsed.get_boards().len(), players);
+            assert_eq!(parsed.get_bowls().len(), players * 2 + 2);
+            assert_eq!(parsed.get_seed(), Some(seed));
             assert_eq!(parsed.rng_state(), original.rng_state());
             assert_eq!(parsed.to_azul_fen(), fen);
         }
@@ -371,7 +371,7 @@ mod tests {
         let fen = original.to_azul_fen();
         let parsed = GameState::from_azul_fen(&fen).unwrap();
 
-        assert_eq!(*parsed.seed(), None);
+        assert_eq!(parsed.get_seed(), None);
         assert_eq!(parsed.rng_state(), original.rng_state());
         assert_eq!(parsed.to_azul_fen(), fen);
     }
@@ -442,8 +442,8 @@ mod tests {
         original.setup_next_round();
         parsed.setup_next_round();
 
-        assert_eq!(parsed.bag().items(), original.bag().items());
-        for (parsed_bowl, original_bowl) in parsed.bowls().iter().zip(original.bowls()) {
+        assert_eq!(parsed.get_bag().items(), original.get_bag().items());
+        for (parsed_bowl, original_bowl) in parsed.get_bowls().iter().zip(original.get_bowls()) {
             assert_eq!(parsed_bowl.tiles(), original_bowl.tiles());
         }
         assert_eq!(parsed.rng_state(), original.rng_state());
@@ -467,9 +467,9 @@ mod tests {
         let fen = original.to_azul_fen();
         let parsed = GameState::from_azul_fen(&fen).unwrap();
 
-        assert_eq!(*parsed.boards()[0].penalties(), 3);
-        assert_eq!(*parsed.boards()[0].penalty_tiles(), 2);
-        assert_eq!(*parsed.discarded_tiles(), 7);
+        assert_eq!(parsed.get_boards()[0].get_penalties(), 3);
+        assert_eq!(parsed.get_boards()[0].get_penalty_tiles(), 2);
+        assert_eq!(parsed.get_discarded_tiles(), 7);
         assert_eq!(parsed.to_azul_fen(), fen);
     }
 }

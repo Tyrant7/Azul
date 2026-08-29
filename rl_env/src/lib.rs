@@ -4,6 +4,18 @@ use azul_movegen::{GameState, Move};
 use tch::Tensor;
 
 fn encode_gamestate(gamestate: &GameState) -> Tensor {
+    let bowls = gamestate.get_bowls();
+    let boards = gamestate.get_boards();
+    let encoded_bowls = encode_bowls(&bowls);
+    let encoded_boards = encode_boards(&boards);
+    Tensor::cat(&[encoded_bowls, encoded_boards], 0)
+}
+
+fn encode_bowls(bowls: &[Vec<u8>]) -> Tensor {
+    unimplemented!()
+}
+
+fn encode_boards(boards: &[Board]) -> Tensor {
     unimplemented!()
 }
 
@@ -69,7 +81,21 @@ impl AzulEnv {
     }
 
     fn map_action(action: usize) -> Move {
-        unimplemented!()
+        // bowl in [0, 9], in a 4 player game
+        // tile_type in [0, 4]
+        // row in [0, 5] (0 = floor, 1-5 = wall)
+        // so action in [0, 9*5*6) = [0, 270)
+        let bowl = action / (5 * 6);
+        let tile_type = (action / 6) % 5;
+        let row = match action % 6 {
+            0 => azul_movegen::row::Row::Floor,
+            n => azul_movegen::row::Row::Wall(n - 1),
+        };
+        Move {
+            bowl,
+            tile_type,
+            row,
+        }
     }
 
     pub fn get_gamestate(&self) -> &GameState {
