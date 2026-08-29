@@ -34,6 +34,7 @@
 - Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
 - Add batched and vectorized environments for parallel rollouts
 - Add deterministic seeded resets and replayable episode seeds
+- Implement the environment-facing observation encoder, action mapper, reward signal, and replay buffer scaffolding for Azul
 ### Rules and environment validation
 - Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
 - Add golden tests for legal-action masks and observation encodings
@@ -43,13 +44,18 @@
 - Add performance benchmarks for reset, step, legal moves, cloning, serialization, and batched stepping
 
 ### Baselines and agents
-- Finish `random_engine` as a legal random-move baseline
 - Add a deterministic heuristic baseline for measuring learning progress
 - Define a policy/value agent interface independent of a particular neural-network framework
 - Implement action selection with legal-action masking, temperature, exploration, and evaluation modes
 - Choose and implement the initial learning algorithm (for example PPO, or policy/value self-play with MCTS)
 - Support self-play with alternating player perspectives and correct credit assignment across turns and rounds
 - Add optional opponent pools, fixed checkpoints, and exploitability-style evaluation
+
+### Immediate next milestone
+- Implement the complete PPO baseline on top of the finalized environment contract.
+- Use a simple two-player shared-policy setup with player-relative observations, legal-action masking, and win/loss or score-difference rewards.
+- Add deterministic evaluation against random and heuristic baselines before introducing self-play or deeper search.
+- Only after the PPO baseline is stable, explore MCTS or AlphaZero-style search on top of the learned policy/value model.
 
 ### Model and training runtime
 - Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
