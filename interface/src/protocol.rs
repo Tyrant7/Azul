@@ -157,11 +157,6 @@ pub(crate) fn send_position(process: &mut EngineProcess, game: &GameState) -> io
     process.send_line(&format!("position fen {fen}"))
 }
 
-/// Requests a move from the engine for the current position.
-pub(crate) fn send_go(process: &mut EngineProcess) -> io::Result<()> {
-    process.send_line("go")
-}
-
 /// Requests a move with a fixed millisecond budget.
 pub(crate) fn send_go_movetime(process: &mut EngineProcess, budget: Duration) -> io::Result<()> {
     process.send_line(&format!("go movetime {}", budget.as_millis()))
@@ -282,23 +277,6 @@ pub(crate) enum GameResult {
 
 /// Maximum recovery attempts permitted for one engine in one game.
 const MAX_RESTARTS_PER_ENGINE: usize = 1;
-
-/// Runs a complete UAI game across one engine process per player.
-pub(crate) fn play_uai_game(
-    processes: &mut [EngineProcess],
-    launches: &[EngineLaunch],
-    game: GameState,
-    time_controls: &[TimeControl],
-) -> io::Result<GameResult> {
-    play_uai_game_with_recovery(
-        processes,
-        launches,
-        game,
-        time_controls,
-        false,
-        Duration::from_secs(5),
-    )
-}
 
 /// Runs a UAI game with optional bounded process recovery.
 pub(crate) fn play_uai_game_with_recovery(
@@ -841,9 +819,9 @@ pub fn parse_bestmove(response: &str) -> Result<Move, ParseBestMoveError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move, play_uai_game,
-        play_uai_game_with_recovery, send_go, send_go_clock, send_go_movetime, send_new_game,
-        send_position, uai_handshake, uai_ready,
+        Cli, Protocol, TimeControl, parse_bestmove, parse_engine, parse_move,
+        play_uai_game_with_recovery, send_go_clock, send_go_movetime, send_new_game, send_position,
+        uai_handshake, uai_ready,
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::{EngineLaunch, EngineProcess};
@@ -1151,7 +1129,15 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game_with_recovery(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Completed(game) => {
@@ -1268,7 +1254,15 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(1_000), TimeControl::Fixed(1_000)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game_with_recovery(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Forfeit { failure, .. } => {
@@ -1292,7 +1286,15 @@ mod tests {
             .map(|launch| EngineProcess::spawn_launch(launch).unwrap())
             .collect::<Vec<_>>();
         let controls = [TimeControl::Fixed(10), TimeControl::Fixed(10)];
-        let result = play_uai_game(&mut processes, &launches, game, &controls).unwrap();
+        let result = play_uai_game_with_recovery(
+            &mut processes,
+            &launches,
+            game,
+            &controls,
+            false,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         match result {
             super::GameResult::Forfeit { failure, .. } => {
@@ -1329,7 +1331,7 @@ mod tests {
         );
 
         let mut process = EngineProcess::spawn(&mut fixture(script)).unwrap();
-        send_go(&mut process).unwrap();
+        process.send_line("go").unwrap();
         assert_eq!(
             process.recv_stdout(Duration::from_secs(1)).unwrap(),
             Some(String::from("go"))
