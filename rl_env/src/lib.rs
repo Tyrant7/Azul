@@ -142,9 +142,10 @@ fn encode_boards(boards: &[Board]) -> Tensor {
                 .map(|&bonus| if bonus { 1.0 } else { 0.0 }),
         );
     }
-    encoded_boards.extend(
-        std::iter::repeat(0.0).take((MAX_PLAYERS - boards.len()) * BOARD_FEATURES_PER_PLAYER),
-    );
+    encoded_boards.extend(std::iter::repeat_n(
+        0.0,
+        (MAX_PLAYERS - boards.len()) * BOARD_FEATURES_PER_PLAYER,
+    ));
 
     Tensor::from_slice(&encoded_boards).to_device(get_device())
 }
@@ -428,6 +429,11 @@ impl ReplayBuffer {
         self.transitions.len()
     }
 
+    /// Returns true if no transitions are stored.
+    pub fn is_empty(&self) -> bool {
+        self.transitions.is_empty()
+    }
+
     /// Removes all stored transitions and resets the insertion cursor.
     pub fn clear(&mut self) {
         self.transitions.clear();
@@ -450,12 +456,12 @@ impl SampleBuffer {
     pub fn new(batch_size: i64, state_size: i64) -> Self {
         let device = get_device();
         SampleBuffer {
-            states: Tensor::zeros(&[batch_size, state_size], (tch::Kind::Float, device)),
-            actions: Tensor::zeros(&[batch_size], (tch::Kind::Int64, device)),
-            rewards: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
-            next_states: Tensor::zeros(&[batch_size, state_size], (tch::Kind::Float, device)),
-            terminated: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
-            truncated: Tensor::zeros(&[batch_size], (tch::Kind::Float, device)),
+            states: Tensor::zeros([batch_size, state_size], (tch::Kind::Float, device)),
+            actions: Tensor::zeros([batch_size], (tch::Kind::Int64, device)),
+            rewards: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
+            next_states: Tensor::zeros([batch_size, state_size], (tch::Kind::Float, device)),
+            terminated: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
+            truncated: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
         }
     }
 }
