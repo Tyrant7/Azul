@@ -6,6 +6,9 @@ use azul_movegen::game_move::IllegalMoveError;
 use azul_movegen::{Bag, Board, Bowl, BowlChoice, GameState, Move, Row, Tile, board};
 use tch::Tensor;
 
+mod net;
+mod ppo;
+
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const MAX_PLAYERS: usize = 4;
 const TILE_TYPES: usize = 5;
