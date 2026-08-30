@@ -17,11 +17,8 @@ const SCORE_SCALE: f32 = 100.0;
 const MAX_PENALTY_SPACES: f32 = 8.0;
 const MAX_PENALTY_TILES: f32 = 7.0;
 const REWARD_SCALE: f32 = 1.0;
-const BOARD_FEATURES_PER_PLAYER: usize = BOARD_SIZE * BOARD_SIZE * TILE_TYPES
-    + BOARD_SIZE * (TILE_TYPES + 1)
-    + 2
-    + MAX_PLAYERS
-    + 3 * BOARD_SIZE;
+const BOARD_FEATURES_PER_PLAYER: usize =
+    BOARD_SIZE * BOARD_SIZE * TILE_TYPES + BOARD_SIZE * (TILE_TYPES + 1) + 2 + 1 + 3 * BOARD_SIZE;
 
 /// Number of discrete actions in the fixed bowl/tile/destination action space.
 pub const ACTION_SPACE_SIZE: usize = MAX_BOWLS * TILE_TYPES * DESTINATIONS_PER_ACTION;
@@ -53,10 +50,6 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
     let mut player_count_encoding = vec![0.0; PLAYER_COUNT_FEATURES];
     player_count_encoding[player_count - 2] = 1.0;
 
-    // Board order identifies the active player; retain the absolute ID for centralized critics.
-    let mut active_player_encoding = vec![0.0; MAX_PLAYERS];
-    active_player_encoding[active_player] = 1.0;
-
     // The first-token owner is encoded relative to the active player: 0 is None, 1 is active.
     let mut first_token_encoding = vec![0.0; FIRST_TOKEN_FEATURES];
     let first_token_index = gamestate
@@ -74,7 +67,6 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
             encoded_boards,
             encoded_bag,
             Tensor::from_slice(&player_count_encoding).to_device(get_device()),
-            Tensor::from_slice(&active_player_encoding).to_device(get_device()),
             Tensor::from_slice(&first_token_encoding).to_device(get_device()),
             Tensor::from_slice(&round_over_encoding).to_device(get_device()),
             Tensor::from_slice(&game_over_encoding).to_device(get_device()),
@@ -131,18 +123,9 @@ fn encode_boards(boards: &[Board]) -> Tensor {
         encoded_boards.push((board.get_penalties() as f32 / MAX_PENALTY_SPACES).min(1.0));
         encoded_boards.push((board.get_penalty_tiles() as f32 / MAX_PENALTY_TILES).min(1.0));
 
-        // Scores are relative to the active-player-first board order and are scaled for the model.
-        let score = board.get_score() as f32;
-        for (i, other_board) in boards.iter().enumerate() {
-            let relative_score = (score - other_board.get_score() as f32) / SCORE_SCALE;
-            encoded_boards.push(relative_score);
-            if i + 1 == MAX_PLAYERS {
-                break;
-            }
-        }
-        for _ in boards.len()..MAX_PLAYERS {
-            encoded_boards.push(0.0);
-        }
+        // Each board gets one score difference relative to the active player's board at index zero.
+        let active_score = boards[0].get_score() as f32;
+        encoded_boards.push((board.get_score() as f32 - active_score) / SCORE_SCALE);
 
         // Bonuses are five row, five column, and five tile-type flags (15 values total).
         let bonuses = board.get_bonuses();
