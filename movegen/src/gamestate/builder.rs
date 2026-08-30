@@ -36,6 +36,7 @@ impl GameStateBuilder {
         self
     }
 
+    /// Sets the centre bowl.
     pub fn centre_bowl(mut self, centre_bowl: Bowl) -> Self {
         self.centre_bowl = centre_bowl;
         self
@@ -73,7 +74,7 @@ impl GameStateBuilder {
 
     /// Builds a validated game state from the configured fields.
     ///
-    /// Construction fails when the player count, bowl count, active-player
+    /// Construction fails when the player count, factory bowl count, active-player
     /// index, first-player-token owner, or RNG state is invalid.
     pub fn build(self) -> Result<GameState, GameStateError> {
         validate_components(

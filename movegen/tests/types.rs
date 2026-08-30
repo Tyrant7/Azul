@@ -1,4 +1,4 @@
-use azul_movegen::{Move, Row};
+use azul_movegen::{BowlChoice, Move, Row};
 
 #[test]
 fn row_variants_have_expected_value_semantics() {
@@ -12,7 +12,7 @@ fn move_default_targets_the_floor_of_the_centre() {
     assert_eq!(
         Move::default(),
         Move {
-            bowl: 0,
+            bowl: BowlChoice::Centre,
             tile_type: 0,
             row: Row::Floor,
         }
@@ -23,7 +23,7 @@ fn move_default_targets_the_floor_of_the_centre() {
 fn move_display_uses_the_six_digit_protocol_format() {
     assert_eq!(
         Move {
-            bowl: 4,
+            bowl: BowlChoice::Factory(3),
             tile_type: 1,
             row: Row::Wall(1),
         }
@@ -32,7 +32,7 @@ fn move_display_uses_the_six_digit_protocol_format() {
     );
     assert_eq!(
         Move {
-            bowl: 0,
+            bowl: BowlChoice::Centre,
             tile_type: 4,
             row: Row::Floor,
         }

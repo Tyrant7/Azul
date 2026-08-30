@@ -67,9 +67,10 @@ physical penalty tile is:
 
 ## Bowls
 
-The bowl section contains exactly `2 * players + 2` bowls, including the centre
-at index `0`. A bowl is either `-` for empty or a non-empty, sorted sequence
-of tile-type digits:
+The wire format contains exactly `2 * players + 2` bowl fields: the centre
+first, followed by `2 * players + 1` factory bowls. In memory, `GameState`
+stores the centre separately from its factory-bowl vector. A bowl is either
+`-` for empty or a non-empty, sorted sequence of tile-type digits:
 
 ```text
 0123 - 0011

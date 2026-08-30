@@ -65,8 +65,8 @@ pub enum GameStateError {
     InvalidActivePlayer { active_player: usize },
     /// The first-player-token owner is outside the board list.
     InvalidFirstTokenOwner { player: usize },
-    /// The number of bowls does not match the player count.
-    InvalidBowlCount { expected: usize, actual: usize },
+    /// The number of factory bowls does not match the player count.
+    InvalidFactoryBowlCount { expected: usize, actual: usize },
     /// The serialized random-generator state could not be decoded.
     InvalidRngState,
 }
@@ -92,9 +92,9 @@ pub struct GameState {
     discarded_tiles: usize,
 }
 
-/// Returns the number of factory bowls plus the centre area for `players` players.
+/// Returns the number of factory bowls required for `players` players.
 ///
-/// Azul uses `2n + 1` factory bowls
+/// Azul uses `2n + 1` factory bowls; the centre is stored separately.
 fn get_factory_bowl_count(players: usize) -> usize {
     players * 2 + 1
 }
@@ -113,7 +113,7 @@ fn validate_components(
     }
     let expected_bowls = get_factory_bowl_count(boards.len());
     if factory_bowls.len() != expected_bowls {
-        return Err(GameStateError::InvalidBowlCount {
+        return Err(GameStateError::InvalidFactoryBowlCount {
             expected: expected_bowls,
             actual: factory_bowls.len(),
         });

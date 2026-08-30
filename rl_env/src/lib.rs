@@ -3,7 +3,7 @@
 use rand::seq::IndexedRandom;
 
 use azul_movegen::game_move::IllegalMoveError;
-use azul_movegen::{Bag, Board, Bowl, GameState, Move, Row, Tile, board};
+use azul_movegen::{Bag, Board, Bowl, BowlChoice, GameState, Move, Row, Tile, board};
 use tch::Tensor;
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
@@ -28,7 +28,6 @@ pub const OBSERVATION_SIZE: usize = MAX_BOWLS * TILE_TYPES
     + MAX_PLAYERS * BOARD_FEATURES_PER_PLAYER
     + TILE_TYPES
     + PLAYER_COUNT_FEATURES
-    + MAX_PLAYERS
     + FIRST_TOKEN_FEATURES
     + 2;
 
@@ -44,7 +43,7 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
         .map(|&player| gamestate.get_boards()[player])
         .collect();
 
-    let encoded_bowls = encode_bowls(gamestate.get_bowls());
+    let encoded_bowls = encode_bowls(gamestate.get_centre_bowl(), gamestate.get_factory_bowls());
     let encoded_boards = encode_boards(&ordered_boards);
     let encoded_bag = encode_bag(gamestate.get_bag());
     let mut player_count_encoding = vec![0.0; PLAYER_COUNT_FEATURES];
@@ -77,16 +76,15 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
 }
 
 /// Encodes each bowl as normalized tile-type counts, padding to four players.
-fn encode_bowls(bowls: &[Bowl]) -> Tensor {
+fn encode_bowls(centre: &Bowl, factories: &[Bowl]) -> Tensor {
     let mut encoded_bowls = vec![0.0; MAX_BOWLS * TILE_TYPES];
-    for (bowl_index, bowl) in bowls.iter().enumerate() {
+    for &tile_type in centre.get_tiles() {
+        encoded_bowls[tile_type] += 1.0 / 20.0;
+    }
+    for (factory_index, bowl) in factories.iter().enumerate() {
         for &tile_type in bowl.get_tiles() {
-            let index = bowl_index * TILE_TYPES + tile_type;
-            encoded_bowls[index] += if bowl_index == 0 {
-                1.0 / 20.0
-            } else {
-                1.0 / 4.0
-            };
+            let index = (factory_index + 1) * TILE_TYPES + tile_type;
+            encoded_bowls[index] += 1.0 / 4.0;
         }
     }
     Tensor::from_slice(&encoded_bowls).to_device(get_device())
@@ -306,10 +304,14 @@ impl AzulEnv {
             Row::Wall(row) if row < BOARD_SIZE => row + 1,
             Row::Wall(_) => return None,
         };
-        if choice.bowl >= MAX_BOWLS || choice.tile_type >= TILE_TYPES {
+        let bowl = match choice.bowl {
+            BowlChoice::Centre => 0,
+            BowlChoice::Factory(index) => index.checked_add(1)?,
+        };
+        if bowl >= MAX_BOWLS || choice.tile_type >= TILE_TYPES {
             return None;
         }
-        Some((choice.bowl * TILE_TYPES + choice.tile_type) * DESTINATIONS_PER_ACTION + row)
+        Some((bowl * TILE_TYPES + choice.tile_type) * DESTINATIONS_PER_ACTION + row)
     }
 
     /// Returns the current game state used by the environment.
