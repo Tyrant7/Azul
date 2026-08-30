@@ -8,7 +8,8 @@ use crate::{Bag, Board, Bowl, Tile};
 pub struct GameStateBuilder {
     active_player: usize,
     boards: Vec<Board>,
-    bowls: Vec<Bowl>,
+    centre_bowl: Bowl,
+    factory_bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
     seed: Option<u64>,
@@ -29,9 +30,14 @@ impl GameStateBuilder {
         self
     }
 
-    /// Sets the factory bowls, including the centre at index zero.
-    pub fn bowls(mut self, bowls: Vec<Bowl>) -> Self {
-        self.bowls = bowls;
+    /// Sets the factory bowls.
+    pub fn factory_bowls(mut self, factory_bowls: Vec<Bowl>) -> Self {
+        self.factory_bowls = factory_bowls;
+        self
+    }
+
+    pub fn centre_bowl(mut self, centre_bowl: Bowl) -> Self {
+        self.centre_bowl = centre_bowl;
         self
     }
 
@@ -73,7 +79,7 @@ impl GameStateBuilder {
         validate_components(
             self.active_player,
             &self.boards,
-            &self.bowls,
+            &self.factory_bowls,
             self.first_token_owner,
         )?;
         let rng_seed = self.seed.unwrap_or_else(|| rng().random());
@@ -92,7 +98,8 @@ impl GameStateBuilder {
         Ok(GameState {
             active_player: self.active_player,
             boards: self.boards,
-            bowls: self.bowls,
+            centre_bowl: self.centre_bowl,
+            factory_bowls: self.factory_bowls,
             bag: self.bag,
             first_token_owner: self.first_token_owner,
             rng,

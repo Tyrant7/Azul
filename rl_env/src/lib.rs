@@ -283,7 +283,10 @@ impl AzulEnv {
             return None;
         }
 
-        let bowl = action / (TILE_TYPES * DESTINATIONS_PER_ACTION);
+        let bowl = match action / (TILE_TYPES * DESTINATIONS_PER_ACTION) {
+            0 => BowlChoice::Centre,
+            bowl => BowlChoice::Factory(bowl - 1),
+        };
         let tile_type = (action / DESTINATIONS_PER_ACTION) % TILE_TYPES;
         let row = match action % DESTINATIONS_PER_ACTION {
             0 => Row::Floor,

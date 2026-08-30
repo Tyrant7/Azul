@@ -29,6 +29,15 @@ impl fmt::Display for Move {
     }
 }
 
+impl fmt::Display for BowlChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BowlChoice::Centre => write!(f, "FL"),
+            BowlChoice::Factory(idx) => write!(f, "{}", idx),
+        }
+    }
+}
+
 /// Returned when a move is not present in the current game's legal move list.
 #[derive(Debug)]
 pub struct IllegalMoveError;
