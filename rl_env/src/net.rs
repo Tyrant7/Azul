@@ -1,7 +1,11 @@
-use tch::nn::{self, VarStore};
+use tch::{
+    Tensor,
+    nn::{self, Module},
+};
 
-use crate::ACTION_SPACE_SIZE;
+use crate::{ACTION_SPACE_SIZE, OBSERVATION_SIZE};
 
+const INPUT_SIZE: i64 = OBSERVATION_SIZE as i64;
 const OUTPUT_SIZE: i64 = ACTION_SPACE_SIZE as i64;
 const HIDDEN: i64 = 256;
 const NUM_BLOCKS: usize = 4;
