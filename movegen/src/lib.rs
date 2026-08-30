@@ -1,8 +1,8 @@
 //! Core rules and state representation for Azul.
 //!
 //! The crate models the parts of an Azul game needed to generate and apply moves:
-//! [`GameState`] owns the players, factory bowls, tile bag, turn order, and
-//! first-player token; [`Board`] owns one player's wall, pattern-line holds,
+//! [`GameState`] owns the players, centre bowl, factory bowls, tile bag, turn
+//! order, and first-player token; [`Board`] owns one player's wall, pattern-line holds,
 //! penalties, score, and collected bonuses. [`Move`] identifies a tile type
 //! taken from a bowl and the destination row on the active player's board.
 //!
@@ -60,6 +60,6 @@ mod row;
 pub use bag::Bag;
 pub use board::Board;
 pub use bowl::Bowl;
-pub use game_move::Move;
+pub use game_move::{BowlChoice, Move};
 pub use gamestate::{GameState, GameStateError, TOTAL_TILE_COUNT, Xoshiro256PlusPlus};
 pub use row::Row;

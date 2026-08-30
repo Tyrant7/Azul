@@ -11,7 +11,7 @@ The crate exposes the following main types from
 - `Board`: one player's pattern lines, wall, score, bonuses, and penalties.
 - `Bowl`: a factory display or the centre area.
 - `Bag<T>`: a shuffled draw container.
-- `Move`: a tile-selection action and its destination row.
+- `Move`: a tile-selection action from the centre or a factory bowl and its destination row.
 - `Row`: either a numbered pattern line or the floor.
 - `Tile`: the tile-type alias used throughout the rules engine.
 
@@ -68,9 +68,12 @@ The intended transition sequence is:
 5. Repeat moves until `round_over()` is true, then start the next round.
 6. Stop after `is_game_over()` becomes true and inspect `get_winner()`.
 
-There are `2 * players + 2` bowls: the centre at index `0`, followed by the
-factory bowls. Factory bowls receive four tiles during round setup. The centre
-has no factory capacity limit.
+The state contains one centre bowl and `2 * players + 1` factory bowls. They
+are exposed separately because the centre has distinct rules: it receives the
+first-player token, collects leftover tiles, and is not restocked. Factory
+bowls receive four tiles during round setup; the centre has no factory
+capacity limit. AzulFEN retains its compact wire order of centre first,
+followed by the factory bowls.
 
 ## State and invariants
 

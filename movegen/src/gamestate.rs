@@ -3,7 +3,10 @@ use crate::{
     bag::Bag,
     board::BOARD_DIMENSION,
     bowl::Bowl,
-    game_move::{IllegalMoveError, Move},
+    game_move::{
+        BowlChoice::{self, Centre, Factory},
+        IllegalMoveError, Move,
+    },
 };
 use rand::{RngCore, SeedableRng};
 use rand_xoshiro::rand_core::{SeedableRng as XoshiroSeedableRng, TryRng as XoshiroTryRng};
@@ -50,9 +53,6 @@ pub const TOTAL_TILE_COUNT: usize = TILES_PER_TYPE * BOARD_DIMENSION;
 /// The number of tiles placed in each factory bowl during round setup.
 const BOWL_CAPACITY: usize = 4;
 
-/// The index used for the centre area, which is represented as a bowl in this model.
-const CENTRE_BOWL_IDX: usize = 0;
-
 mod builder;
 pub use builder::GameStateBuilder;
 
@@ -65,15 +65,15 @@ pub enum GameStateError {
     InvalidActivePlayer { active_player: usize },
     /// The first-player-token owner is outside the board list.
     InvalidFirstTokenOwner { player: usize },
-    /// The number of bowls does not match the player count.
-    InvalidBowlCount { expected: usize, actual: usize },
+    /// The number of factory bowls does not match the player count.
+    InvalidFactoryBowlCount { expected: usize, actual: usize },
     /// The serialized random-generator state could not be decoded.
     InvalidRngState,
 }
 
 /// Complete mutable state for an Azul game.
 ///
-/// The state contains one board per player, the factory bowls and centre area,
+/// The state contains one board per player, one centre bowl, the factory bowls,
 /// the tile bag, the active player, and the owner of the first-player token.
 /// An optional seed records the seed used to initialize the game's random
 /// stream. The current xoshiro state is available through
@@ -83,7 +83,8 @@ pub enum GameStateError {
 pub struct GameState {
     active_player: usize,
     boards: Vec<Board>,
-    bowls: Vec<Bowl>,
+    centre_bowl: Bowl,
+    factory_bowls: Vec<Bowl>,
     bag: Bag<Tile>,
     first_token_owner: Option<usize>,
     rng: Xoshiro256PlusPlus,
@@ -91,18 +92,18 @@ pub struct GameState {
     discarded_tiles: usize,
 }
 
-/// Returns the number of factory bowls plus the centre area for `players` players.
+/// Returns the number of factory bowls required for `players` players.
 ///
-/// Azul uses `2n + 1` factory bowls; this model adds one bowl for the centre.
-fn get_bowl_count(players: usize) -> usize {
-    players * 2 + 2
+/// Azul uses `2n + 1` factory bowls; the centre is stored separately.
+fn get_factory_bowl_count(players: usize) -> usize {
+    players * 2 + 1
 }
 
 /// Validates the component relationships required by a playable game state.
 fn validate_components(
     active_player: usize,
     boards: &[Board],
-    bowls: &[Bowl],
+    factory_bowls: &[Bowl],
     first_token_owner: Option<usize>,
 ) -> Result<(), GameStateError> {
     if !(2..=4).contains(&boards.len()) {
@@ -110,11 +111,11 @@ fn validate_components(
             players: boards.len(),
         });
     }
-    let expected_bowls = get_bowl_count(boards.len());
-    if bowls.len() != expected_bowls {
-        return Err(GameStateError::InvalidBowlCount {
+    let expected_bowls = get_factory_bowl_count(boards.len());
+    if factory_bowls.len() != expected_bowls {
+        return Err(GameStateError::InvalidFactoryBowlCount {
             expected: expected_bowls,
-            actual: bowls.len(),
+            actual: factory_bowls.len(),
         });
     }
     if active_player >= boards.len() {
@@ -151,7 +152,8 @@ impl GameState {
         Ok(GameState {
             active_player: 0,
             boards: vec![Board::default(); players],
-            bowls: vec![Bowl::default(); get_bowl_count(players)],
+            factory_bowls: vec![Bowl::default(); get_factory_bowl_count(players)],
+            centre_bowl: Bowl::default(),
             bag: Bag::new(get_default_tileset(), &mut rng),
             first_token_owner: None,
             rng,
@@ -167,7 +169,8 @@ impl GameState {
 
     ref_getters! {
         boards: Vec<Board>,
-        bowls: Vec<Bowl>,
+        factory_bowls: Vec<Bowl>,
+        centre_bowl: Bowl,
         bag: Bag<Tile>,
     }
 
@@ -193,10 +196,11 @@ impl GameState {
     pub fn get_tile_count(&self) -> usize {
         self.bag.items().len()
             + self
-                .bowls
+                .factory_bowls
                 .iter()
                 .map(|bowl| bowl.get_tiles().len())
                 .sum::<usize>()
+            + self.centre_bowl.get_tiles().len()
             + self.boards.iter().map(Board::get_tile_count).sum::<usize>()
             + self.discarded_tiles
     }
@@ -212,9 +216,9 @@ impl GameState {
             self.discarded_tiles += board.place_holds();
         }
 
-        // Fill factory bowls; index zero is reserved for the centre.
-        let (bowls, bag) = (&mut self.bowls, &mut self.bag);
-        for bowl_idx in 1..bowls.len() {
+        // Fill factory bowls
+        let (factory_bowls, bag) = (&mut self.factory_bowls, &mut self.bag);
+        for bowl_idx in 0..factory_bowls.len() {
             let mut next: Vec<Tile> = bag.take(BOWL_CAPACITY).collect();
             if next.len() < BOWL_CAPACITY {
                 // Rebuild the bag from tiles not currently held, placed, or dealt.
@@ -222,7 +226,7 @@ impl GameState {
                 for board in &self.boards {
                     used_tiles.extend(board.get_active_tiles());
                 }
-                for bowl in bowls.iter() {
+                for bowl in factory_bowls.iter() {
                     used_tiles.extend(bowl.get_tiles().iter().copied());
                 }
                 used_tiles.extend(next.iter().copied());
@@ -241,7 +245,7 @@ impl GameState {
                 bag.restock(unused_tiles, &mut self.rng);
             }
             next.extend(bag.take(BOWL_CAPACITY - next.len()));
-            bowls[bowl_idx].fill(next);
+            factory_bowls[bowl_idx].fill(next);
         }
 
         // The first-player-token owner starts the new round.
@@ -255,12 +259,21 @@ impl GameState {
     /// penalties. An empty bowl contributes no moves.
     pub fn get_valid_moves(&self) -> Vec<Move> {
         let board = self.boards.get(self.active_player).expect("Invalid player");
-        let mut moves = Vec::with_capacity(self.bowls.len() * BOARD_DIMENSION);
-        for (bowl_idx, bowl) in self.bowls.iter().enumerate() {
+        let mut moves = Vec::with_capacity((1 + self.factory_bowls.len()) * BOARD_DIMENSION);
+        for tile in self.centre_bowl.get_tile_types() {
+            board.for_each_valid_row_for_tile_type(tile, |row| {
+                moves.push(Move {
+                    bowl: Centre,
+                    tile_type: tile,
+                    row,
+                })
+            });
+        }
+        for (bowl_idx, bowl) in self.factory_bowls.iter().enumerate() {
             for tile in bowl.get_tile_types() {
                 board.for_each_valid_row_for_tile_type(tile, |row| {
                     moves.push(Move {
-                        bowl: bowl_idx,
+                        bowl: Factory(bowl_idx),
                         tile_type: tile,
                         row,
                     })
@@ -281,14 +294,19 @@ impl GameState {
         }
 
         // Remove the selected tile type from the chosen bowl.
-        let tiles = self
-            .bowls
-            .get_mut(choice.bowl)
-            .ok_or(IllegalMoveError)?
-            .take_tiles(choice.tile_type);
+        let tiles = match choice.bowl {
+            BowlChoice::Centre => self.centre_bowl.take_tiles(choice.tile_type),
+            BowlChoice::Factory(idx) => self
+                .factory_bowls
+                .get_mut(idx)
+                .ok_or(IllegalMoveError)?
+                .take_tiles(choice.tile_type),
+        };
 
         // The first player to take from the centre receives the token penalty.
-        let penalty = if choice.bowl == CENTRE_BOWL_IDX && self.first_token_owner.is_none() {
+        let penalty = if let BowlChoice::Centre = choice.bowl
+            && self.first_token_owner.is_none()
+        {
             self.first_token_owner = Some(self.active_player);
             1
         } else {
@@ -303,10 +321,7 @@ impl GameState {
         active_board.hold_tiles(choice.tile_type, tiles.0.len(), choice.row, penalty)?;
 
         // Move the other tiles from the selected bowl to the centre.
-        self.bowls
-            .get_mut(CENTRE_BOWL_IDX)
-            .expect("Invalid bowl")
-            .extend(&tiles.1);
+        self.centre_bowl.extend(&tiles.1);
 
         // Advance to the next player, wrapping at the end of the player list.
         self.active_player += 1;
@@ -318,7 +333,11 @@ impl GameState {
 
     /// Returns `true` when no bowl contains any tiles.
     pub fn round_over(&self) -> bool {
-        self.bowls.iter().all(|b| b.get_tile_types().is_empty())
+        self.centre_bowl.get_tile_types().is_empty()
+            && self
+                .factory_bowls
+                .iter()
+                .all(|b| b.get_tile_types().is_empty())
     }
 
     /// Returns `true` when any player has completed a horizontal wall line.

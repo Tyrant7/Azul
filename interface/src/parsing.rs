@@ -223,6 +223,12 @@ impl FromAzulFEN for GameState {
             .into_iter()
             .map(Bowl::from_azul_fen)
             .collect::<Result<Vec<_>, ParseGameStateError>>()?;
+        let Some((centre_bowl, factory_bowls)) = bowls.split_first() else {
+            return Err(ParseGameStateError);
+        };
+        if factory_bowls.len() != boards.len() * 2 + 1 {
+            return Err(ParseGameStateError);
+        }
 
         let bag_fen = sections[2];
         if !bag_fen.is_ascii() || !bag_fen.bytes().all(|byte| (b'0'..=b'4').contains(&byte)) {
@@ -249,7 +255,8 @@ impl FromAzulFEN for GameState {
         let mut builder = GameState::builder()
             .active_player(active_player)
             .boards(boards)
-            .bowls(bowls)
+            .centre_bowl(centre_bowl.clone())
+            .factory_bowls(factory_bowls.to_vec())
             .bag(bag)
             .first_token_owner(first_token_owner);
         if let Some(seed) = seed {
@@ -277,9 +284,11 @@ impl ToAzulFEN for GameState {
             azul_fen.push(' ');
         }
 
-        // Serialize factory bowls and the centre area.
+        // Serialize the centre followed by the factory bowls.
         azul_fen.push_str("| ");
-        for bowl in self.get_bowls().iter() {
+        azul_fen.push_str(&self.get_centre_bowl().fmt_uci_like());
+        azul_fen.push(' ');
+        for bowl in self.get_factory_bowls().iter() {
             azul_fen.push_str(&bowl.fmt_uci_like());
             azul_fen.push(' ');
         }
@@ -353,7 +362,7 @@ mod tests {
             let parsed = GameState::from_azul_fen(&fen).unwrap();
 
             assert_eq!(parsed.get_boards().len(), players);
-            assert_eq!(parsed.get_bowls().len(), players * 2 + 2);
+            assert_eq!(parsed.get_factory_bowls().len(), players * 2 + 1);
             assert_eq!(parsed.get_seed(), Some(seed));
             assert_eq!(parsed.rng_state(), original.rng_state());
             assert_eq!(parsed.to_azul_fen(), fen);
@@ -364,7 +373,8 @@ mod tests {
     fn unseeded_snapshots_round_trip_with_exact_rng_state() {
         let original = GameState::builder()
             .boards(vec![Board::default(); 2])
-            .bowls(vec![Bowl::default(); 6])
+            .centre_bowl(Bowl::default())
+            .factory_bowls(vec![Bowl::default(); 5])
             .bag(Bag::default())
             .build()
             .unwrap();
@@ -443,7 +453,15 @@ mod tests {
         parsed.setup_next_round();
 
         assert_eq!(parsed.get_bag().items(), original.get_bag().items());
-        for (parsed_bowl, original_bowl) in parsed.get_bowls().iter().zip(original.get_bowls()) {
+        assert_eq!(
+            parsed.get_centre_bowl().get_tiles(),
+            original.get_centre_bowl().get_tiles()
+        );
+        for (parsed_bowl, original_bowl) in parsed
+            .get_factory_bowls()
+            .iter()
+            .zip(original.get_factory_bowls())
+        {
             assert_eq!(parsed_bowl.get_tiles(), original_bowl.get_tiles());
         }
         assert_eq!(parsed.rng_state(), original.rng_state());
@@ -456,7 +474,8 @@ mod tests {
         board.hold_tiles(2, 2, Row::Floor, 1).unwrap();
         let original = GameState::builder()
             .boards(vec![board, Board::default()])
-            .bowls(vec![Bowl::default(); 6])
+            .centre_bowl(Bowl::default())
+            .factory_bowls(vec![Bowl::default(); 5])
             .bag(Bag::default())
             .first_token_owner(Some(0))
             .set_seed(42)

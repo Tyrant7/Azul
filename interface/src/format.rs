@@ -43,9 +43,13 @@ impl ProtocolFormat for GameState {
         output.push_str(&"-".repeat(20));
         output.push('\n');
 
-        // Format factory bowls and the centre area.
-        for (i, bowl) in self.get_bowls().iter().enumerate() {
-            output.push_str(&format!("{}: {} | ", i, bowl.fmt_human()));
+        // Format the centre and factory bowls with their distinct roles.
+        output.push_str(&format!(
+            "centre: {} | ",
+            self.get_centre_bowl().fmt_human()
+        ));
+        for (i, bowl) in self.get_factory_bowls().iter().enumerate() {
+            output.push_str(&format!("factory {}: {} | ", i, bowl.fmt_human()));
         }
         output
     }

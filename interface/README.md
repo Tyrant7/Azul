@@ -6,11 +6,13 @@ designed around the [UAI protocol](protocol.md).
 
 The current executable parses the options, starts configured child processes,
 manages their standard streams, performs the UAI startup sequence, and runs a
-two-to-four-player UAI game when all configured engines use UAI. It also retains
-a local human-input game. Match scheduling, time controls, persistence,
-and diagnostics/resource-limit options are parsed but are not all wired into
-execution yet. The `--recover` option enables one bounded restart for a crashed
-or protocol-erroring engine during a UAI game.
+single two-to-four-player UAI game when all configured engines use UAI. It also
+retains a local human-input game. Engine time controls, diagnostics/logging,
+resource limits, and bounded recovery are wired into that single-game path.
+Tournament scheduling, result persistence/resume, opening books, and summary
+output are parsed but are not wired into execution yet. The `--recover` option
+enables one bounded restart for a crashed or protocol-erroring engine during a
+UAI game.
 
 ## Quick start
 

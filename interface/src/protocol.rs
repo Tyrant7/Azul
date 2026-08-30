@@ -2,7 +2,7 @@
 
 use crate::parsing::ToAzulFEN;
 use crate::process::{EngineLaunch, EngineProcess};
-use azul_movegen::{GameState, Row, Tile, game_move::Move};
+use azul_movegen::{BowlChoice, GameState, Row, Tile, game_move::Move};
 use clap::{Parser, ValueEnum};
 use std::{
     io,
@@ -767,15 +767,17 @@ impl From<ParseIntError> for ParseMoveError {
 }
 
 /*
-Moves contain three decimal, two-digit components: bowl index, tile type, and destination row.
-For example, 040102 selects tile type 1 from bowl index 4 and sends it to wall row index 1
-(the second wall row). Bowl 00 is the centre area, and row 00 is the floor.
+Moves contain three decimal, two-digit components: wire bowl index, tile type, and destination
+row. For example, 040102 selects tile type 1 from factory bowl 3 (wire bowl 4) and sends it to
+wall row index 1 (the second wall row). Wire bowl 00 is the centre area, and row 00 is the floor.
 */
 /// Parses a six-digit move into a [`Move`].
 ///
-/// The components are a zero-based bowl index, tile type, and destination row.
-/// Row `00` maps to [`Row::Floor`]; any other row value maps to a zero-based
-/// [`Row::Wall`] index by subtracting one.
+/// The components are a zero-based wire bowl index, tile type, and destination row.
+/// Wire bowl `00` maps to [`BowlChoice::Centre`]; positive wire bowl values map
+/// to zero-based [`BowlChoice::Factory`] indices. Row `00` maps to
+/// [`Row::Floor`]; any other row value maps to a zero-based [`Row::Wall`] index
+/// by subtracting one.
 ///
 /// This function parses the move's shape and numeric fields only; legality is
 /// checked later by [`azul_movegen::GameState::make_move`].
@@ -786,7 +788,10 @@ pub fn parse_move(input: &str) -> Result<Move, ParseMoveError> {
     let (bowl, other) = input.split_at(2);
     let (tile_type, row) = other.split_at(2);
 
-    let bowl = bowl.parse::<usize>()?;
+    let bowl = match bowl.parse::<usize>()? {
+        0 => BowlChoice::Centre,
+        index => BowlChoice::Factory(index - 1),
+    };
     let tile_type = tile_type.parse::<Tile>()?;
     let row = row.parse::<usize>()?;
     let row = if row == 0 {
@@ -824,7 +829,7 @@ mod tests {
     };
     use crate::parsing::ToAzulFEN;
     use crate::process::{EngineLaunch, EngineProcess};
-    use azul_movegen::{Bag, Board, Bowl, GameState, Row, Tile, game_move::Move};
+    use azul_movegen::{Bag, Board, Bowl, BowlChoice, GameState, Row, Tile, game_move::Move};
     use clap::Parser;
     use std::{
         fs,
@@ -975,7 +980,7 @@ mod tests {
         assert_eq!(
             parse_move("000000").unwrap(),
             Move {
-                bowl: 0,
+                bowl: BowlChoice::Centre,
                 tile_type: 0,
                 row: Row::Floor,
             }
@@ -983,7 +988,7 @@ mod tests {
         assert_eq!(
             parse_move("040102").unwrap(),
             Move {
-                bowl: 4,
+                bowl: BowlChoice::Factory(3),
                 tile_type: 1,
                 row: Row::Wall(1),
             }
@@ -1002,7 +1007,7 @@ mod tests {
         assert_eq!(
             parse_bestmove("bestmove 040102").unwrap(),
             Move {
-                bowl: 4,
+                bowl: BowlChoice::Factory(3),
                 tile_type: 1,
                 row: Row::Wall(1),
             }
@@ -1010,7 +1015,7 @@ mod tests {
         assert_eq!(
             parse_bestmove("bestmove 000000").unwrap(),
             Move {
-                bowl: 0,
+                bowl: BowlChoice::Centre,
                 tile_type: 0,
                 row: Row::Floor,
             }
@@ -1112,11 +1117,12 @@ mod tests {
                 [None; 5],
             ])
             .build();
-        let mut bowls = vec![Bowl::default(); 6];
-        bowls[1].fill(vec![4 as Tile]);
+        let mut factory_bowls = vec![Bowl::default(); 5];
+        factory_bowls[0].fill(vec![4 as Tile]);
         let game = GameState::builder()
             .boards(vec![board, Board::default()])
-            .bowls(bowls)
+            .centre_bowl(Bowl::default())
+            .factory_bowls(factory_bowls)
             .bag(Bag::default())
             .set_seed(42)
             .build()
@@ -1179,11 +1185,12 @@ mod tests {
                 [None; 5],
             ])
             .build();
-        let mut bowls = vec![Bowl::default(); 6];
-        bowls[1].fill(vec![4 as Tile]);
+        let mut factory_bowls = vec![Bowl::default(); 5];
+        factory_bowls[0].fill(vec![4 as Tile]);
         let game = GameState::builder()
             .boards(vec![board, Board::default()])
-            .bowls(bowls)
+            .centre_bowl(Bowl::default())
+            .factory_bowls(factory_bowls)
             .bag(Bag::default())
             .set_seed(42)
             .build()

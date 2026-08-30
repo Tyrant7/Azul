@@ -1,6 +1,6 @@
 use azul_movegen::board::BOARD_DIMENSION;
 use azul_movegen::{
-    Bag, Board, Bowl, GameState, GameStateError, Move, Row, TOTAL_TILE_COUNT, Tile,
+    Bag, Board, Bowl, BowlChoice, GameState, GameStateError, Move, Row, TOTAL_TILE_COUNT, Tile,
     Xoshiro256PlusPlus,
 };
 
@@ -11,9 +11,11 @@ fn empty_bowls(count: usize) -> Vec<Bowl> {
 
 /// Creates a minimal state suitable for testing transitions.
 fn custom_state(boards: Vec<Board>, bowls: Vec<Bowl>) -> GameState {
+    let (centre_bowl, factory_bowls) = bowls.split_first().expect("centre bowl is present");
     GameState::builder()
         .boards(boards)
-        .bowls(bowls)
+        .centre_bowl(centre_bowl.clone())
+        .factory_bowls(factory_bowls.to_vec())
         .bag(Bag::<Tile>::default())
         .set_seed(17)
         .build()
@@ -26,7 +28,8 @@ fn new_creates_the_expected_components() {
 
     assert_eq!(state.get_active_player(), 0);
     assert_eq!(state.get_boards().len(), 2);
-    assert_eq!(state.get_bowls().len(), 6);
+    assert_eq!(state.get_factory_bowls().len(), 5);
+    assert!(state.get_centre_bowl().get_tiles().is_empty());
     assert_eq!(state.get_bag().items().len(), 100);
     assert_eq!(state.get_first_token_owner(), None);
     assert_eq!(state.get_discarded_tiles(), 0);
@@ -40,7 +43,7 @@ fn new_supports_two_three_and_four_players() {
         let state = GameState::new(players, 42).unwrap();
 
         assert_eq!(state.get_boards().len(), players);
-        assert_eq!(state.get_bowls().len(), players * 2 + 2);
+        assert_eq!(state.get_factory_bowls().len(), players * 2 + 1);
     }
 }
 
@@ -64,11 +67,12 @@ fn builder_rejects_empty_and_structurally_invalid_states() {
     assert!(matches!(
         GameState::builder()
             .boards(vec![Board::default(); 2])
-            .bowls(empty_bowls(5))
+            .centre_bowl(Bowl::default())
+            .factory_bowls(empty_bowls(4))
             .build(),
-        Err(GameStateError::InvalidBowlCount {
-            expected: 6,
-            actual: 5
+        Err(GameStateError::InvalidFactoryBowlCount {
+            expected: 5,
+            actual: 4
         })
     ));
 
@@ -76,7 +80,8 @@ fn builder_rejects_empty_and_structurally_invalid_states() {
         GameState::builder()
             .active_player(2)
             .boards(vec![Board::default(); 2])
-            .bowls(empty_bowls(6))
+            .centre_bowl(Bowl::default())
+            .factory_bowls(empty_bowls(5))
             .build(),
         Err(GameStateError::InvalidActivePlayer { active_player: 2 })
     ));
@@ -84,7 +89,8 @@ fn builder_rejects_empty_and_structurally_invalid_states() {
     assert!(matches!(
         GameState::builder()
             .boards(vec![Board::default(); 2])
-            .bowls(empty_bowls(6))
+            .centre_bowl(Bowl::default())
+            .factory_bowls(empty_bowls(5))
             .first_token_owner(Some(2))
             .build(),
         Err(GameStateError::InvalidFirstTokenOwner { player: 2 })
@@ -93,7 +99,8 @@ fn builder_rejects_empty_and_structurally_invalid_states() {
     assert!(matches!(
         GameState::builder()
             .boards(vec![Board::default(); 2])
-            .bowls(empty_bowls(6))
+            .centre_bowl(Bowl::default())
+            .factory_bowls(empty_bowls(5))
             .set_rng_state(vec![0; 32])
             .build(),
         Err(GameStateError::InvalidRngState)
@@ -109,19 +116,26 @@ fn setup_fills_factory_bowls_and_preserves_determinism() {
     second.setup_next_round();
 
     assert_eq!(first.get_active_player(), 0);
-    assert_eq!(first.get_bowls()[0].get_tiles(), &Vec::<Tile>::new());
+    assert_eq!(first.get_centre_bowl().get_tiles(), &Vec::<Tile>::new());
     assert!(
         first
-            .get_bowls()
+            .get_factory_bowls()
             .iter()
-            .skip(1)
             .all(|bowl| bowl.get_tiles().len() == 4)
     );
     assert_eq!(first.get_bag().items().len(), 80);
     assert_eq!(first.get_tile_count(), TOTAL_TILE_COUNT);
     assert!(!first.round_over());
     assert_eq!(first.get_bag().items(), second.get_bag().items());
-    for (first_bowl, second_bowl) in first.get_bowls().iter().zip(second.get_bowls()) {
+    assert_eq!(
+        first.get_centre_bowl().get_tiles(),
+        second.get_centre_bowl().get_tiles()
+    );
+    for (first_bowl, second_bowl) in first
+        .get_factory_bowls()
+        .iter()
+        .zip(second.get_factory_bowls())
+    {
         assert_eq!(first_bowl.get_tiles(), second_bowl.get_tiles());
     }
 }
@@ -132,20 +146,33 @@ fn valid_moves_include_each_tile_type_and_all_destinations() {
     state.setup_next_round();
     let moves = state.get_valid_moves();
     let expected_count: usize = state
-        .get_bowls()
+        .get_factory_bowls()
         .iter()
         .map(|bowl| bowl.get_tile_types().len() * (BOARD_DIMENSION + 1))
-        .sum();
+        .sum::<usize>()
+        + state.get_centre_bowl().get_tile_types().len() * (BOARD_DIMENSION + 1);
 
     assert_eq!(moves.len(), expected_count);
-    for (bowl_index, bowl) in state.get_bowls().iter().enumerate() {
+    for tile_type in state.get_centre_bowl().get_tile_types() {
+        for row in (0..BOARD_DIMENSION)
+            .map(Row::Wall)
+            .chain(std::iter::once(Row::Floor))
+        {
+            assert!(moves.contains(&Move {
+                bowl: BowlChoice::Centre,
+                tile_type,
+                row,
+            }));
+        }
+    }
+    for (bowl_index, bowl) in state.get_factory_bowls().iter().enumerate() {
         for tile_type in bowl.get_tile_types() {
             for row in (0..BOARD_DIMENSION)
                 .map(Row::Wall)
                 .chain(std::iter::once(Row::Floor))
             {
                 assert!(moves.contains(&Move {
-                    bowl: bowl_index,
+                    bowl: BowlChoice::Factory(bowl_index),
                     tile_type,
                     row,
                 }));
@@ -158,9 +185,8 @@ fn valid_moves_include_each_tile_type_and_all_destinations() {
 fn make_move_updates_board_bowls_and_active_player() {
     let mut state = GameState::new(2, 12).unwrap();
     state.setup_next_round();
-    let chosen_bowl = 1;
-    let chosen_tile = state.get_bowls()[chosen_bowl].get_tiles()[0];
-    let remaining_count = state.get_bowls()[chosen_bowl]
+    let chosen_tile = state.get_factory_bowls()[0].get_tiles()[0];
+    let remaining_count = state.get_factory_bowls()[0]
         .get_tiles()
         .iter()
         .filter(|&&tile| tile != chosen_tile)
@@ -168,7 +194,7 @@ fn make_move_updates_board_bowls_and_active_player() {
 
     state
         .make_move(&Move {
-            bowl: chosen_bowl,
+            bowl: BowlChoice::Factory(0),
             tile_type: chosen_tile,
             row: Row::Wall(0),
         })
@@ -177,11 +203,11 @@ fn make_move_updates_board_bowls_and_active_player() {
     assert_eq!(state.get_active_player(), 1);
     assert_eq!(state.get_boards()[0].get_holds()[0][0], Some(chosen_tile));
     assert!(
-        !state.get_bowls()[chosen_bowl]
+        !state.get_factory_bowls()[0]
             .get_tiles()
             .contains(&chosen_tile)
     );
-    assert_eq!(state.get_bowls()[0].get_tiles().len(), remaining_count);
+    assert_eq!(state.get_centre_bowl().get_tiles().len(), remaining_count);
 }
 
 #[test]
@@ -190,7 +216,7 @@ fn illegal_move_is_rejected_without_advancing_the_turn() {
     state.setup_next_round();
 
     let result = state.make_move(&Move {
-        bowl: 1,
+        bowl: BowlChoice::Factory(0),
         tile_type: BOARD_DIMENSION as Tile,
         row: Row::Floor,
     });
@@ -207,7 +233,7 @@ fn first_centre_pick_assigns_the_token_and_penalty() {
 
     state
         .make_move(&Move {
-            bowl: 0,
+            bowl: BowlChoice::Centre,
             tile_type: 2,
             row: Row::Floor,
         })
@@ -227,7 +253,7 @@ fn round_over_requires_the_centre_and_all_factory_bowls_to_be_empty() {
     assert!(!state.round_over());
     state
         .make_move(&Move {
-            bowl: 0,
+            bowl: BowlChoice::Centre,
             tile_type: 2,
             row: Row::Floor,
         })
@@ -248,7 +274,8 @@ fn game_over_is_detected_after_a_completed_pattern_line_is_placed() {
             Board::builder().holds(holds).placed(placed).build(),
             Board::default(),
         ])
-        .bowls(empty_bowls(6))
+        .centre_bowl(Bowl::default())
+        .factory_bowls(empty_bowls(5))
         .bag(Bag::default())
         .set_seed(29)
         .build()
@@ -268,7 +295,8 @@ fn setup_tracks_discarded_tiles_without_counting_the_token() {
     bowls[0] = Bowl::from_tiles(vec![3]);
     let mut state = GameState::builder()
         .boards(vec![board, Board::default()])
-        .bowls(bowls)
+        .centre_bowl(bowls[0].clone())
+        .factory_bowls(bowls[1..].to_vec())
         .bag(Bag::from_items(vec![0; 97]))
         .first_token_owner(Some(0))
         .set_seed(23)
@@ -291,7 +319,8 @@ fn restocking_excludes_tiles_already_dealt_during_setup() {
             Board::builder().placed(placed).build(),
             Board::default(),
         ])
-        .bowls(empty_bowls(6))
+        .centre_bowl(Bowl::default())
+        .factory_bowls(empty_bowls(5))
         .bag(Bag::from_items(vec![0]))
         .discarded_tiles(98)
         .set_seed(31)
@@ -309,9 +338,8 @@ fn restocking_excludes_tiles_already_dealt_during_setup() {
         .iter()
         .copied()
         .chain(
-            state
-                .get_bowls()
-                .iter()
+            std::iter::once(state.get_centre_bowl())
+                .chain(state.get_factory_bowls().iter())
                 .flat_map(|bowl| bowl.get_tiles().iter().copied()),
         )
         .chain(
@@ -352,7 +380,8 @@ fn tile_count_is_conserved_through_random_gameplay() {
 fn setup_uses_first_token_owner_and_clears_the_token() {
     let state = GameState::builder()
         .boards(vec![Board::default(); 2])
-        .bowls(empty_bowls(6))
+        .centre_bowl(Bowl::default())
+        .factory_bowls(empty_bowls(5))
         .bag(Bag::<Tile>::default())
         .first_token_owner(Some(1))
         .set_seed(21)
@@ -366,9 +395,8 @@ fn setup_uses_first_token_owner_and_clears_the_token() {
     assert_eq!(state.get_first_token_owner(), None);
     assert!(
         state
-            .get_bowls()
+            .get_factory_bowls()
             .iter()
-            .skip(1)
             .all(|bowl| bowl.get_tiles().len() == 4)
     );
 }
@@ -384,7 +412,8 @@ fn builder_preserves_explicit_state() {
     let state = GameState::builder()
         .active_player(0)
         .boards(boards)
-        .bowls(bowls)
+        .centre_bowl(bowls[0].clone())
+        .factory_bowls(bowls[1..].to_vec())
         .bag(bag)
         .first_token_owner(Some(0))
         .set_seed(99)
@@ -393,7 +422,7 @@ fn builder_preserves_explicit_state() {
 
     assert_eq!(state.get_active_player(), 0);
     assert_eq!(state.get_boards().len(), 2);
-    assert_eq!(state.get_bowls()[0].get_tiles(), &vec![4]);
+    assert_eq!(state.get_centre_bowl().get_tiles(), &vec![4]);
     assert_eq!(state.get_bag().items(), &expected_bag);
     assert_eq!(state.get_first_token_owner(), Some(0));
 }
