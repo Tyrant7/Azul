@@ -6,11 +6,17 @@ use crate::{Tile, row::Row};
 ///
 /// Bowl indices and tile types are zero-based. [`Row::Wall`] also uses a zero-based
 /// row index; [`Row::Floor`] represents the penalty area.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Move {
-    pub bowl: usize,
+    pub bowl: BowlChoice,
     pub tile_type: Tile,
     pub row: Row,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BowlChoice {
+    Centre,
+    Factory(usize),
 }
 
 impl fmt::Display for Move {
