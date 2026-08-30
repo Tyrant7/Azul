@@ -20,10 +20,13 @@ const REWARD_SCALE: f32 = 1.0;
 const BOARD_FEATURES_PER_PLAYER: usize =
     BOARD_SIZE * BOARD_SIZE * TILE_TYPES + BOARD_SIZE * (TILE_TYPES + 1) + 2 + 1 + 3 * BOARD_SIZE;
 
-/// Number of discrete actions in the fixed bowl/tile/destination action space.
+/// Number of discrete actions in the fixed wire-bowl/tile/destination action space.
+/// Wire bowl slot zero is the centre; unused slots for smaller games are masked.
 pub const ACTION_SPACE_SIZE: usize = MAX_BOWLS * TILE_TYPES * DESTINATIONS_PER_ACTION;
 
-/// Number of values in every encoded observation, independent of player count.
+/// Number of values in every encoded, active-player-relative observation.
+/// The current layout contains 757 values, including padded four-player board
+/// features and separate centre/factory bowl features.
 pub const OBSERVATION_SIZE: usize = MAX_BOWLS * TILE_TYPES
     + MAX_PLAYERS * BOARD_FEATURES_PER_PLAYER
     + TILE_TYPES

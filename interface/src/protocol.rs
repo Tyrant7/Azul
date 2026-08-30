@@ -768,14 +768,16 @@ impl From<ParseIntError> for ParseMoveError {
 
 /*
 Moves contain three decimal, two-digit components: wire bowl index, tile type, and destination
-row. For example, 040102 selects tile type 1 from wire bowl index 4 and sends it to wall row
-index 1 (the second wall row). Wire bowl 00 is the centre area, and row 00 is the floor.
+row. For example, 040102 selects tile type 1 from factory bowl 3 (wire bowl 4) and sends it to
+wall row index 1 (the second wall row). Wire bowl 00 is the centre area, and row 00 is the floor.
 */
 /// Parses a six-digit move into a [`Move`].
 ///
 /// The components are a zero-based wire bowl index, tile type, and destination row.
-/// Row `00` maps to [`Row::Floor`]; any other row value maps to a zero-based
-/// [`Row::Wall`] index by subtracting one.
+/// Wire bowl `00` maps to [`BowlChoice::Centre`]; positive wire bowl values map
+/// to zero-based [`BowlChoice::Factory`] indices. Row `00` maps to
+/// [`Row::Floor`]; any other row value maps to a zero-based [`Row::Wall`] index
+/// by subtracting one.
 ///
 /// This function parses the move's shape and numeric fields only; legality is
 /// checked later by [`azul_movegen::GameState::make_move`].

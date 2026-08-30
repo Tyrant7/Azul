@@ -73,7 +73,7 @@ pub enum GameStateError {
 
 /// Complete mutable state for an Azul game.
 ///
-/// The state contains one board per player, the factory bowls and centre area,
+/// The state contains one board per player, one centre bowl, the factory bowls,
 /// the tile bag, the active player, and the owner of the first-player token.
 /// An optional seed records the seed used to initialize the game's random
 /// stream. The current xoshiro state is available through

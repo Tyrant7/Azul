@@ -5,9 +5,10 @@ with engine processes. It follows the shape of the Universal Chess Interface
 (UCI), while using Azul-specific position and move formats.
 
 This document is the project specification for UAI. The executable currently
-contains the configuration, parsing, child-process stream, startup handshake,
-basic turn-loop pieces, and bounded engine recovery. Match scheduling,
-structured diagnostics, and resource limits remain implementation work.
+contains configuration parsing, child-process streams, startup handshakes,
+time controls, diagnostics, resource limits, the basic turn loop, and bounded
+engine recovery. Match scheduling, structured result persistence, and some
+advanced command handling remain implementation work.
 
 ## Transport
 
@@ -96,7 +97,7 @@ standard error, not in an `info` or `error` response.
 
 ## Move format
 
-A move is six decimal digits made from three two-digit, zero-based components:
+A move is six decimal digits made from three two-digit components:
 
 ```text
 BBTTRR
@@ -104,13 +105,13 @@ BBTTRR
 
 | Component | Range | Meaning |
 | --- | --- | --- |
-| `BB` | `00` through the final bowl index | Factory bowl index. `00` is the centre. |
+| `BB` | `00` through the final wire bowl index | Wire bowl `00` is the centre; wire bowl `01` selects factory bowl `0`, wire bowl `02` selects factory bowl `1`, and so on. |
 | `TT` | `00` through `04` | Tile type. |
 | `RR` | `00` through `05` | Destination. `00` is the floor; `01` through `05` are wall rows `0` through `4`. |
 
-For example, `040102` selects tile type `01` from bowl index `04` and sends it
-to wall row index `01`. The move's legality depends on the current position;
-the six-digit parser only decodes its fields.
+For example, `040102` selects tile type `01` from factory bowl `3` (wire bowl
+`04`) and sends it to wall row index `01`. The move's legality depends on the
+current position; the six-digit parser only decodes its fields.
 
 ## Positions
 

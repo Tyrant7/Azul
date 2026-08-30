@@ -1,8 +1,5 @@
 # TODO
 
-## Movegen Cleanup
-- Fix awkward bowl/centre shared data
-
 ## Interface
 - Complete UAI command dispatch with diagnostics, recovery, and tournament integration
   - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
@@ -29,15 +26,10 @@
 ## Reinforcement learning system
 
 ### Environment contract
-- Define a stable environment API with `reset`, `step`, terminal/truncated status, rewards, and episode metadata
 - Define the observation space for one player and for a centralized critic
-- Define a canonical action encoding for every legal move, including an explicit legal-action mask
-- Define perspective handling so the active player, opponent boards, scores, and rewards are unambiguous
 - Decide how invalid actions are handled: masked before inference, rejected by the environment, and never silently converted
-- Expose round boundaries, game boundaries, first-player-token ownership, and player count to the environment
 - Add batched and vectorized environments for parallel rollouts
-- Add deterministic seeded resets and replayable episode seeds
-- Implement the environment-facing observation encoder, action mapper, reward signal, and replay buffer scaffolding for Azul
+
 ### Rules and environment validation
 - Build a comprehensive rules test suite, including property tests and regression tests for scoring and transitions
 - Add golden tests for legal-action masks and observation encodings
