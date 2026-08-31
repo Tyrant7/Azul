@@ -18,8 +18,10 @@ pub struct PpoConfig {
     pub learning_rate: f64,
     /// Discount factor used for rewards-to-go.
     pub gamma: f64,
-    /// PPO probability-ratio clipping range.
-    pub clip: f64,
+    /// PPO probability-ratio clipping range for disadvantaged actions.
+    pub lower_clip_epsilon: f64,
+    /// PPO probability-ratio clipping range for advantaged actions.
+    pub upper_clip_epsilon: f64,
 }
 
 impl Default for PpoConfig {
@@ -30,7 +32,8 @@ impl Default for PpoConfig {
             updates_per_iteration: 5,
             learning_rate: 3e-4,
             gamma: 0.99,
-            clip: 0.2,
+            lower_clip_epsilon: 0.2,
+            upper_clip_epsilon: 0.28,
         }
     }
 }
@@ -303,7 +306,8 @@ impl PpoTrainer {
         assert!(config.max_timesteps_per_episode > 0);
         assert!(config.updates_per_iteration > 0);
         assert!(config.gamma >= 0.0 && config.gamma <= 1.0);
-        assert!(config.clip > 0.0);
+        assert!(config.lower_clip_epsilon > 0.0);
+        assert!(config.upper_clip_epsilon > 0.0);
 
         let actor_vs = nn::VarStore::new(get_device());
         let critic_vs = nn::VarStore::new(get_device());
@@ -358,7 +362,10 @@ impl PpoTrainer {
                     .squeeze_dim(1);
                 let ratio = (&current_log_probs - &data.old_log_probs).exp();
                 let unclipped = &ratio * &data.advantages;
-                let clipped_ratio = ratio.clamp(1.0 - self.config.clip, 1.0 + self.config.clip);
+                let clipped_ratio = ratio.clamp(
+                    1.0 - self.config.lower_clip_epsilon,
+                    1.0 + self.config.upper_clip_epsilon,
+                );
                 let clipped = clipped_ratio * &data.advantages;
                 let actor_loss_tensor = -unclipped.minimum(&clipped).mean(Kind::Float);
 
@@ -370,9 +377,9 @@ impl PpoTrainer {
                 approx_kl = (&data.old_log_probs - &current_log_probs)
                     .mean(Kind::Float)
                     .double_value(&[]);
-                clip_fraction = (ratio - 1.0)
-                    .abs()
-                    .gt(self.config.clip)
+                clip_fraction = ratio
+                    .lt(1.0 - self.config.lower_clip_epsilon)
+                    .logical_or(&ratio.gt(1.0 + self.config.upper_clip_epsilon))
                     .to_kind(Kind::Float)
                     .mean(Kind::Float)
                     .double_value(&[]);

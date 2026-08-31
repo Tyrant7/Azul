@@ -10,7 +10,7 @@ fn main() -> Result<(), tch::TchError> {
 
     let mut trainer = rl_env::PpoTrainer::new(config)?;
     let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
-    let mut writer = SummaryWriter::new(format!("runs/azul_ppo/{}", "baseline"));
+    let mut writer = SummaryWriter::new(format!("runs/azul_ppo/{}", "upper_clip"));
 
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| {
         writer.add_scalar("loss/actor", metrics.actor_loss, metrics.timesteps);
