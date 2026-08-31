@@ -313,8 +313,8 @@ impl PpoTrainer {
         let critic_vs = nn::VarStore::new(get_device());
         let actor = initialize_actor(&actor_vs.root());
         let critic = initialize_critic(&critic_vs.root());
-        let actor_optimizer = nn::Adam::default().build(&actor_vs, config.learning_rate)?;
-        let critic_optimizer = nn::Adam::default().build(&critic_vs, config.learning_rate)?;
+        let actor_optimizer = nn::AdamW::default().build(&actor_vs, config.learning_rate)?;
+        let critic_optimizer = nn::AdamW::default().build(&critic_vs, config.learning_rate)?;
 
         Ok(Self {
             actor_vs,

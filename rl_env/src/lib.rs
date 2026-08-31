@@ -177,7 +177,7 @@ fn calculate_reward(score_deltas: &[i64], active_player: usize) -> f32 {
     (score_deltas[active_player] - max_opp_score) as f32 * REWARD_SCALE
 }
 
-fn get_device() -> tch::Device {
+pub fn get_device() -> tch::Device {
     tch::Device::cuda_if_available()
 }
 
