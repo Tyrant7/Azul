@@ -1,18 +1,37 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Activates the project environment without terminating a shell that sourced it.
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    ACTIVATION_ENV_SOURCED=0
+    set -euo pipefail
+else
+    ACTIVATION_ENV_SOURCED=1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 if [[ ! -d "${PROJECT_ROOT}/.venv" ]]; then
   echo "Missing virtual environment at ${PROJECT_ROOT}/.venv" >&2
+  if (( ACTIVATION_ENV_SOURCED )); then
+    return 1
+  fi
   exit 1
 fi
 
 export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
 export PATH="${VIRTUAL_ENV}/bin:${PATH}"
 export LIBTORCH_USE_PYTORCH=1
+if ! TORCH_LIB_DIR="$(python -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"; then
+  echo "Could not locate the PyTorch libraries in ${VIRTUAL_ENV}" >&2
+  if (( ACTIVATION_ENV_SOURCED )); then
+    return 1
+  fi
+  exit 1
+fi
+export LD_LIBRARY_PATH="${TORCH_LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 printf 'Activated Azul project environment\n'
 printf 'Python: %s\n' "$(command -v python)"
 printf 'Torch: %s\n' "$(python -c 'import torch; print(torch.__version__)')"
+printf 'Torch libraries: %s\n' "${TORCH_LIB_DIR}"

@@ -44,27 +44,27 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 - Add a deterministic heuristic baseline for measuring learning progress
 - Define a policy/value agent interface independent of a particular neural-network framework
 - Implement action selection with legal-action masking, temperature, exploration, and evaluation modes
-- Choose and implement the initial learning algorithm (for example PPO, or policy/value self-play with MCTS)
+- Extend and validate the initial PPO algorithm before considering policy/value self-play with MCTS
 - Support self-play with alternating player perspectives and correct credit assignment across turns and rounds
 - Add optional opponent pools, fixed checkpoints, and exploitability-style evaluation
 
 ### Immediate next milestone
-- Implement the complete PPO baseline on top of the finalized environment contract.
-- Use a simple two-player shared-policy setup with player-relative observations, legal-action masking, and win/loss or score-difference rewards.
+- The initial minimal PPO baseline is implemented in `rl_env/src/ppo.rs`: it uses a two-player shared policy, player-relative observations, legal-action masking, discounted rewards-to-go, and score-difference rewards.
+- Extend the baseline into a complete training system with deterministic evaluation, checkpointing, and reproducible configuration.
 - Add deterministic evaluation against random and heuristic baselines before introducing self-play or deeper search.
 - Only after the PPO baseline is stable, explore MCTS or AlphaZero-style search on top of the learned policy/value model.
 
 ### Model and training runtime
 - Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
-- Implement observation encoding, policy logits, value prediction, and batched inference
-- Implement loss functions, optimizer, gradient clipping, learning-rate schedules, and entropy/value-loss weighting
+- Harden observation encoding, policy logits, value prediction, and batched inference with golden tests
+- Extend the current loss and optimizer path with gradient clipping, learning-rate schedules, and entropy/value-loss weighting
 - Implement rollout workers and an actor/learner data path
 - Support configurable parallel environments, inference batches, rollout length, and update frequency
 - Add checkpoint save/load for model weights, optimizer state, scheduler state, counters, configuration, and RNG state
 - Add checkpoint compatibility/versioning and a way to resume interrupted training
-- Add replay or trajectory storage with episode IDs, observations, actions, masks, rewards, values, log-probabilities, and terminal flags
+- Add durable trajectory storage with episode IDs, observations, actions, masks, rewards, values, log-probabilities, and terminal flags when experiments need it; PPO's current rollout batch is intentionally temporary and on-policy
 - Add generalized advantage estimation or the equivalent return/target calculation for the selected algorithm
-- Add replay-buffer capacity, sampling, prioritization, persistence, and cleanup if the selected algorithm needs replay
+- Add replay-buffer capacity, sampling, prioritization, persistence, and cleanup only if a future off-policy algorithm needs replay
 
 - Complete UAI command handling and document the command/response grammar.
 - Add fixture-engine integration tests for handshake, readiness, full games,
