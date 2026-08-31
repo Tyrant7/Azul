@@ -37,6 +37,11 @@ fn main() -> Result<(), tch::TchError> {
             metrics.timesteps,
         );
         writer.add_scalar(
+            "episode/mean_winner_score",
+            metrics.mean_winner_score,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
             "episode/player_zero_win_rate",
             metrics.player_zero_win_rate,
             metrics.timesteps,
@@ -44,7 +49,7 @@ fn main() -> Result<(), tch::TchError> {
         writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} kl={:.4} clip={:.3} score_diff={:.2} win_rate={:.3}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
@@ -52,6 +57,7 @@ fn main() -> Result<(), tch::TchError> {
             metrics.approx_kl,
             metrics.clip_fraction,
             metrics.mean_final_score_difference,
+            metrics.mean_winner_score,
             metrics.player_zero_win_rate,
         );
     });

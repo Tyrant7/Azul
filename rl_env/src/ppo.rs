@@ -52,6 +52,8 @@ pub struct PpoMetrics {
     pub mean_episode_length: f32,
     /// Mean final player-zero-minus-player-one score difference.
     pub mean_final_score_difference: f32,
+    /// Mean winner score.
+    pub mean_winner_score: f32,
     /// Fraction of terminal episodes won by player zero.
     pub player_zero_win_rate: f32,
     /// Actor surrogate loss from the final update epoch.
@@ -91,6 +93,7 @@ struct EpisodeStats {
     reward_sum: f32,
     length: usize,
     final_score_difference: f32,
+    winner_score: f32,
     terminated: bool,
     player_zero_won: bool,
 }
@@ -398,6 +401,9 @@ impl PpoTrainer {
                 mean_final_score_difference: mean_episode_metric(&episode_stats, |episode| {
                     episode.final_score_difference
                 }),
+                mean_winner_score: mean_episode_metric(&episode_stats, |episode| {
+                    episode.winner_score
+                }),
                 player_zero_win_rate: terminal_win_rate(&episode_stats),
                 actor_loss: actor_loss as f32,
                 critic_loss: critic_loss as f32,
@@ -453,10 +459,12 @@ impl PpoTrainer {
                     let boards = env.gamestate.get_boards();
                     let final_score_difference =
                         boards[0].get_score() as f32 - boards[1].get_score() as f32;
+                    let winner_score = boards[0].get_score().max(boards[1].get_score()) as f32;
                     batch.episodes.push(EpisodeStats {
                         reward_sum: episode_return,
                         length: episode_length,
                         final_score_difference,
+                        winner_score,
                         terminated: result.terminated,
                         player_zero_won: result.terminated && env.gamestate.get_winner() == 0,
                     });
@@ -471,14 +479,6 @@ impl PpoTrainer {
     pub fn var_stores(&self) -> (&nn::VarStore, &nn::VarStore) {
         (&self.actor_vs, &self.critic_vs)
     }
-}
-
-/// Runs a small default PPO training session for manual experiments.
-pub fn ppo() {
-    let config = PpoConfig::default();
-    let mut trainer = PpoTrainer::new(config).expect("PPO networks must initialize");
-    let mut environment = AzulEnv::new(rand::random(), config.max_timesteps_per_episode);
-    trainer.train(&mut environment, config.timesteps_per_batch);
 }
 
 #[cfg(test)]
