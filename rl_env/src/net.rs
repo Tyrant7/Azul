@@ -98,7 +98,7 @@ impl Module for ResNetwork {
     }
 }
 
-pub fn initialize_network(vs: &nn::Path) -> ResNetwork {
+pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
     let mut blocks = Vec::with_capacity(NUM_BLOCKS);
     blocks.push(ResBlock::new(&(vs / "block0"), HIDDEN, HIDDEN));
     for i in 0..NUM_BLOCKS - 1 {
@@ -109,5 +109,19 @@ pub fn initialize_network(vs: &nn::Path) -> ResNetwork {
         input: hidden_linear(vs / "input", INPUT_SIZE, HIDDEN),
         blocks,
         head: head_linear(vs / "head", HIDDEN, OUTPUT_SIZE),
+    }
+}
+
+pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
+    let mut blocks = Vec::with_capacity(NUM_BLOCKS);
+    blocks.push(ResBlock::new(&(vs / "block0"), HIDDEN, HIDDEN));
+    for i in 0..NUM_BLOCKS - 1 {
+        blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
+    }
+
+    ResNetwork {
+        input: hidden_linear(vs / "input", INPUT_SIZE, HIDDEN),
+        blocks,
+        head: head_linear(vs / "head", HIDDEN, 1),
     }
 }
