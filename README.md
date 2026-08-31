@@ -52,12 +52,33 @@ The interface executable parses CLI configuration, can spawn configured child pr
 ### `rl_env`
 
 [`rl_env/`](rl_env/) provides a two-player environment with `reset`, `step`,
-terminal/truncation status, rewards, legal-action masks, and replay-buffer
-scaffolding. Observations are fixed-size and player-relative: the active
-player's board is first, the centre is encoded separately from factory bowls,
-and the action space reserves ten wire bowl slots for the four-player maximum.
+terminal/truncation status, rewards, legal-action masks, and a minimal
+on-policy PPO trainer. `PpoTrainer` collects complete episodes into a
+temporary rollout batch, computes discounted rewards-to-go, and performs
+full-batch clipped PPO updates before discarding that batch; it does not use
+an off-policy replay buffer. Observations are fixed-size and player-relative:
+the active player's board is first, the centre is encoded separately from
+factory bowls, and the action space reserves ten wire bowl slots for the
+four-player maximum. The policy is a categorical distribution over the fixed
+action space, with illegal actions masked before sampling and likelihood
+evaluation.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
+
+The current trainer is intentionally a learning baseline rather than a full
+training system. It has no minibatches, entropy bonus, generalized advantage
+estimation, parallel rollout workers, checkpoint commands, or deterministic
+evaluation harness yet. See [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the
+algorithm and [`TODO.md`](TODO.md) for the remaining training-system work.
+
+A minimal training session can be started from Rust with:
+
+```rust
+let config = rl_env::PpoConfig::default();
+let mut trainer = rl_env::PpoTrainer::new(config)?;
+let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
+trainer.train(&mut environment, 10_000);
+```
 
 ### `random_engine`
 
@@ -83,8 +104,17 @@ cargo test --workspace
 ```
 
 The workspace commands also build `rl_env` and therefore require LibTorch for
-the `tch` dependency. Without LibTorch, run the rules and interface checks
-separately with `cargo test -p movegen` and `cargo test -p interface`.
+the `tch` dependency. When using the project virtual environment's PyTorch
+installation, activate it first so both compilation and runtime library
+loading are configured:
+
+```bash
+source scripts/activate-env.sh
+cargo test --workspace
+```
+
+Without LibTorch, run the rules and interface checks separately with
+`cargo test -p movegen` and `cargo test -p interface`.
 
 Run the interface help or executable with:
 
@@ -101,4 +131,9 @@ cargo run -p random_engine
 
 ## Development direction
 
-The immediate engineering priorities are to make the rules deterministic and thoroughly tested, complete the UAI process protocol, and expose a stable environment API. Those foundations will support parallel self-play and a reproducible reinforcement-learning system. The detailed feature roadmap is maintained in [`TODO.md`](TODO.md).
+The rules and environment now expose the foundations for a reproducible
+reinforcement-learning system, including player-relative observations,
+legal-action masking, and a minimal PPO baseline. The next priorities are
+deterministic evaluation, stronger environment tests, checkpointing, and
+scalable rollout infrastructure. The detailed feature roadmap is maintained
+in [`TODO.md`](TODO.md).

@@ -1,3 +1,5 @@
+//! Neural-network definitions used by the reinforcement-learning trainer.
+
 use tch::{
     Tensor,
     nn::{self, Module},
@@ -81,6 +83,7 @@ impl ResBlock {
     }
 }
 
+/// Residual multilayer perceptron used as an actor or critic.
 #[derive(Debug)]
 pub struct ResNetwork {
     input: nn::Linear,
@@ -98,6 +101,7 @@ impl Module for ResNetwork {
     }
 }
 
+/// Builds a policy network whose outputs are action logits.
 pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
     let mut blocks = Vec::with_capacity(NUM_BLOCKS);
     for i in 0..NUM_BLOCKS {
@@ -111,6 +115,7 @@ pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
     }
 }
 
+/// Builds a value network whose output estimates the current state value.
 pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
     let mut blocks = Vec::with_capacity(NUM_BLOCKS);
     for i in 0..NUM_BLOCKS {

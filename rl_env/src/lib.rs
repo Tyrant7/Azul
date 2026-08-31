@@ -1,13 +1,13 @@
 //! Reinforcement-learning environment and fixed-size Azul observations.
 
-use rand::seq::IndexedRandom;
-
 use azul_movegen::game_move::IllegalMoveError;
 use azul_movegen::{Bag, Board, Bowl, BowlChoice, GameState, Move, Row, Tile, board};
 use tch::Tensor;
 
 mod net;
-mod ppo;
+pub mod ppo;
+
+pub use ppo::{PpoConfig, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const MAX_PLAYERS: usize = 4;
@@ -52,19 +52,23 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
     let encoded_bowls = encode_bowls(gamestate.get_centre_bowl(), gamestate.get_factory_bowls());
     let encoded_boards = encode_boards(&ordered_boards);
     let encoded_bag = encode_bag(gamestate.get_bag());
-    let mut player_count_encoding = vec![0.0; PLAYER_COUNT_FEATURES];
+    let mut player_count_encoding = vec![0.0_f32; PLAYER_COUNT_FEATURES];
     player_count_encoding[player_count - 2] = 1.0;
 
     // The first-token owner is encoded relative to the active player: 0 is None, 1 is active.
-    let mut first_token_encoding = vec![0.0; FIRST_TOKEN_FEATURES];
+    let mut first_token_encoding = vec![0.0_f32; FIRST_TOKEN_FEATURES];
     let first_token_index = gamestate
         .get_first_token_owner()
         .map(|owner| 1 + (owner + player_count - active_player) % player_count)
         .unwrap_or(0);
     first_token_encoding[first_token_index] = 1.0;
 
-    let round_over_encoding = [if gamestate.round_over() { 1.0 } else { 0.0 }];
-    let game_over_encoding = [if gamestate.is_game_over() { 1.0 } else { 0.0 }];
+    let round_over_encoding = [if gamestate.round_over() { 1.0_f32 } else { 0.0 }];
+    let game_over_encoding = [if gamestate.is_game_over() {
+        1.0_f32
+    } else {
+        0.0
+    }];
 
     Tensor::cat(
         &[
@@ -83,7 +87,7 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
 
 /// Encodes each bowl as normalized tile-type counts, padding to four players.
 fn encode_bowls(centre: &Bowl, factories: &[Bowl]) -> Tensor {
-    let mut encoded_bowls = vec![0.0; MAX_BOWLS * TILE_TYPES];
+    let mut encoded_bowls = vec![0.0_f32; MAX_BOWLS * TILE_TYPES];
     for &tile_type in centre.get_tiles() {
         encoded_bowls[tile_type] += 1.0 / 20.0;
     }
@@ -97,7 +101,7 @@ fn encode_bowls(centre: &Bowl, factories: &[Bowl]) -> Tensor {
 }
 
 fn encode_boards(boards: &[Board]) -> Tensor {
-    let mut encoded_boards = Vec::new();
+    let mut encoded_boards = Vec::<f32>::new();
     for board in boards {
         // Each placed cell is represented by a five-way tile-type one-hot vector.
         for row in board.get_placed() {
@@ -151,7 +155,7 @@ fn encode_boards(boards: &[Board]) -> Tensor {
 }
 
 fn encode_bag(bag: &Bag<Tile>) -> Tensor {
-    let mut encoded_bag = vec![0.0; TILE_TYPES];
+    let mut encoded_bag = vec![0.0_f32; TILE_TYPES];
     for &tile_type in bag.items() {
         encoded_bag[tile_type] += 1.0 / 20.0;
     }
@@ -186,9 +190,13 @@ pub struct AzulEnv {
 
 /// Result of applying one environment action.
 pub struct StepResult {
+    /// Observation after the action, from the new active player's perspective.
     pub next_state: Tensor,
+    /// Reward for the player who took the action.
     pub reward: f32,
+    /// Whether the game reached its terminal state.
     pub terminated: bool,
+    /// Whether the environment stopped because its step limit was reached.
     pub truncated: bool,
 }
 
@@ -324,147 +332,5 @@ impl AzulEnv {
     /// Returns the current game state used by the environment.
     pub fn get_gamestate(&self) -> &GameState {
         &self.gamestate
-    }
-}
-
-/// A state transition stored for off-policy training.
-pub struct Transition {
-    pub state: Tensor,
-    pub action: usize,
-    pub log_probs: &Tensor,
-    pub reward: f32,
-    pub next_state: Tensor,
-    pub terminated: bool,
-    pub truncated: bool,
-}
-
-impl Transition {
-    /// Creates a transition while sharing tensor storage through shallow clones.
-    pub fn new(
-        state: &Tensor,
-        action: usize,
-        log_probs: &Tensor,
-        reward: f32,
-        next_state: &Tensor,
-        terminated: bool,
-        truncated: bool,
-    ) -> Self {
-        Transition {
-            state: state.shallow_clone(),
-            action,
-            log_probs,
-            reward,
-            next_state: next_state.shallow_clone(),
-            terminated,
-            truncated,
-        }
-    }
-}
-
-/// Fixed-capacity ring buffer for replay transitions.
-pub struct ReplayBuffer {
-    capacity: usize,
-    insertions: usize,
-    transitions: Vec<Transition>,
-}
-
-impl ReplayBuffer {
-    /// Creates an empty replay buffer with positive capacity.
-    pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "replay buffer capacity must be positive");
-        ReplayBuffer {
-            capacity,
-            insertions: 0,
-            transitions: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Adds a transition, replacing the oldest entry after the buffer fills.
-    pub fn push(&mut self, transition: Transition) {
-        if self.transitions.len() < self.capacity {
-            self.transitions.push(transition);
-        } else {
-            self.transitions[self.insertions] = transition;
-        }
-        self.insertions += 1;
-        self.insertions %= self.capacity;
-    }
-
-    /// Samples distinct transitions without replacement.
-    pub fn sample(&self, batch_size: usize) -> Vec<&Transition> {
-        self.transitions
-            .sample(&mut rand::rng(), batch_size)
-            .collect()
-    }
-
-    /// Copies a sampled batch into reusable model-input tensors.
-    pub fn sample_tensors(&self, buffer: &mut SampleBuffer) {
-        let batch_size = buffer.states.size()[0] as usize;
-        let batch = self.sample(batch_size);
-
-        // Stack is one bulk GPU op -> much faster than per-element copy
-        let states: Vec<_> = batch.iter().map(|t| t.state.shallow_clone()).collect();
-        let next_states: Vec<_> = batch.iter().map(|t| t.next_state.shallow_clone()).collect();
-
-        buffer.states = Tensor::stack(&states, 0);
-        buffer.next_states = Tensor::stack(&next_states, 0);
-
-        // Scalar fields are cheap -> build on CPU then move
-        let actions: Vec<i64> = batch.iter().map(|t| t.action as i64).collect();
-        let rewards: Vec<f32> = batch.iter().map(|t| t.reward).collect();
-        let terminated: Vec<f32> = batch
-            .iter()
-            .map(|t| if t.terminated { 1.0 } else { 0.0 })
-            .collect();
-        let truncated: Vec<f32> = batch
-            .iter()
-            .map(|t| if t.truncated { 1.0 } else { 0.0 })
-            .collect();
-
-        buffer.actions = Tensor::from_slice(&actions).to_device(get_device());
-        buffer.rewards = Tensor::from_slice(&rewards).to_device(get_device());
-        buffer.terminated = Tensor::from_slice(&terminated).to_device(get_device());
-        buffer.truncated = Tensor::from_slice(&truncated).to_device(get_device());
-    }
-
-    /// Returns the number of stored transitions.
-    pub fn len(&self) -> usize {
-        self.transitions.len()
-    }
-
-    /// Returns true if no transitions are stored.
-    pub fn is_empty(&self) -> bool {
-        self.transitions.is_empty()
-    }
-
-    /// Removes all stored transitions and resets the insertion cursor.
-    pub fn clear(&mut self) {
-        self.transitions.clear();
-        self.insertions = 0;
-    }
-}
-
-/// Reusable tensors populated by a replay-buffer sample.
-pub struct SampleBuffer {
-    pub states: Tensor,
-    pub actions: Tensor,
-    pub rewards: Tensor,
-    pub next_states: Tensor,
-    pub terminated: Tensor,
-    pub truncated: Tensor,
-}
-
-impl SampleBuffer {
-    /// Allocates empty model-input tensors for a fixed batch and observation size.
-    pub fn new(batch_size: i64, state_size: i64) -> Self {
-        let device = get_device();
-        SampleBuffer {
-            states: Tensor::zeros([batch_size, state_size], (tch::Kind::Float, device)),
-            actions: Tensor::zeros([batch_size], (tch::Kind::Int64, device)),
-            rewards: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
-            next_states: Tensor::zeros([batch_size, state_size], (tch::Kind::Float, device)),
-            terminated: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
-            truncated: Tensor::zeros([batch_size], (tch::Kind::Float, device)),
-        }
     }
 }
