@@ -29,7 +29,7 @@ impl Default for PpoConfig {
         Self {
             timesteps_per_batch: 1_000,
             max_timesteps_per_episode: 1_000,
-            updates_per_iteration: 5,
+            updates_per_iteration: 4,
             learning_rate: 3e-4,
             gamma: 0.99,
             lower_clip_epsilon: 0.2,
