@@ -7,7 +7,7 @@ use tch::Tensor;
 mod net;
 pub mod ppo;
 
-pub use ppo::{PpoConfig, PpoTrainer};
+pub use ppo::{PpoConfig, PpoMetrics, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const MAX_PLAYERS: usize = 4;

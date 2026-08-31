@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 movegen = { path = "../movegen" }
 rand = "0.10.2"
+tensorboard-rs = "0.5.9"
 tch = "0.26.0"

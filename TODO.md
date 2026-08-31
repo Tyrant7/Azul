@@ -48,7 +48,7 @@
 
 ### Immediate next milestone
 - The initial minimal PPO baseline is implemented in `rl_env/src/ppo.rs`: it uses a two-player shared policy, player-relative observations, legal-action masking, discounted rewards-to-go, and score-difference rewards.
-- Extend the baseline into a complete training system with deterministic evaluation, metrics, checkpointing, and reproducible configuration.
+- Extend the baseline into a complete training system with deterministic evaluation, checkpointing, and reproducible configuration.
 - Add deterministic evaluation against random and heuristic baselines before introducing self-play or deeper search.
 - Only after the PPO baseline is stable, explore MCTS or AlphaZero-style search on top of the learned policy/value model.
 

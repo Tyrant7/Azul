@@ -35,6 +35,35 @@ impl Default for PpoConfig {
     }
 }
 
+/// Scalar diagnostics emitted after each PPO rollout and update iteration.
+#[derive(Debug, Clone, Copy)]
+pub struct PpoMetrics {
+    /// One-based PPO iteration number.
+    pub iteration: usize,
+    /// Total environment transitions collected so far.
+    pub timesteps: usize,
+    /// Number of transitions in this rollout batch.
+    pub batch_timesteps: usize,
+    /// Number of complete or truncated episodes in this batch.
+    pub episodes: usize,
+    /// Mean sum of environment rewards per episode.
+    pub mean_episode_return: f32,
+    /// Mean number of transitions per episode.
+    pub mean_episode_length: f32,
+    /// Mean final player-zero-minus-player-one score difference.
+    pub mean_final_score_difference: f32,
+    /// Fraction of terminal episodes won by player zero.
+    pub player_zero_win_rate: f32,
+    /// Actor surrogate loss from the final update epoch.
+    pub actor_loss: f32,
+    /// Critic mean-squared error from the final update epoch.
+    pub critic_loss: f32,
+    /// Approximate KL divergence from the rollout policy in the final epoch.
+    pub approx_kl: f32,
+    /// Fraction of samples outside the PPO clipping range in the final epoch.
+    pub clip_fraction: f32,
+}
+
 /// A single transition collected under the current policy.
 struct RolloutStep {
     state: Tensor,
@@ -53,6 +82,17 @@ struct RolloutStep {
 /// Temporary on-policy data collected before one PPO update iteration.
 struct RolloutBatch {
     steps: Vec<RolloutStep>,
+    episodes: Vec<EpisodeStats>,
+}
+
+/// Episode-level values retained for training diagnostics.
+#[derive(Debug, Clone, Copy)]
+struct EpisodeStats {
+    reward_sum: f32,
+    length: usize,
+    final_score_difference: f32,
+    terminated: bool,
+    player_zero_won: bool,
 }
 
 impl RolloutBatch {
@@ -60,6 +100,7 @@ impl RolloutBatch {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             steps: Vec::with_capacity(capacity),
+            episodes: Vec::new(),
         }
     }
 
@@ -217,6 +258,30 @@ fn sample_action(
     })
 }
 
+/// Computes the mean of one metric across the episodes in a rollout batch.
+fn mean_episode_metric<F>(episodes: &[EpisodeStats], metric: F) -> f32
+where
+    F: Fn(&EpisodeStats) -> f32,
+{
+    if episodes.is_empty() {
+        return 0.0;
+    }
+    episodes.iter().map(metric).sum::<f32>() / episodes.len() as f32
+}
+
+/// Computes player zero's win rate across terminal, non-truncated episodes.
+fn terminal_win_rate(episodes: &[EpisodeStats]) -> f32 {
+    let terminal_episodes = episodes.iter().filter(|episode| episode.terminated);
+    let terminal_count = terminal_episodes.clone().count();
+    if terminal_count == 0 {
+        return 0.0;
+    }
+    terminal_episodes
+        .filter(|episode| episode.player_zero_won)
+        .count() as f32
+        / terminal_count as f32
+}
+
 /// Owns the actor, critic, and optimizers for the minimal PPO algorithm.
 pub struct PpoTrainer {
     actor_vs: nn::VarStore,
@@ -257,35 +322,88 @@ impl PpoTrainer {
 
     /// Collects one fresh rollout batch and applies PPO updates to it.
     pub fn train(&mut self, env: &mut AzulEnv, total_timesteps: usize) {
+        self.train_with_callback(env, total_timesteps, |_| {});
+    }
+
+    /// Trains PPO and reports metrics after each rollout/update iteration.
+    pub fn train_with_callback<F>(
+        &mut self,
+        env: &mut AzulEnv,
+        total_timesteps: usize,
+        mut on_update: F,
+    ) where
+        F: FnMut(&PpoMetrics),
+    {
         let mut timesteps = 0;
+        let mut iteration = 0;
         while timesteps < total_timesteps {
             let batch = self.collect_rollout(env);
-            timesteps += batch.len();
+            let batch_timesteps = batch.len();
+            let episode_stats = batch.episodes.clone();
+            timesteps += batch_timesteps;
             let data = batch.into_data(self.config.gamma);
 
+            let mut actor_loss = 0.0;
+            let mut critic_loss = 0.0;
+            let mut approx_kl = 0.0;
+            let mut clip_fraction = 0.0;
             for _ in 0..self.config.updates_per_iteration {
                 let logits = self.actor.forward(&data.states);
                 let log_probs = masked_log_probs(&logits, &data.action_masks);
                 let current_log_probs = log_probs
                     .gather(1, &data.actions.unsqueeze(1), false)
                     .squeeze_dim(1);
-                let ratio = (current_log_probs - &data.old_log_probs).exp();
+                let ratio = (&current_log_probs - &data.old_log_probs).exp();
                 let unclipped = &ratio * &data.advantages;
                 let clipped_ratio = ratio.clamp(1.0 - self.config.clip, 1.0 + self.config.clip);
                 let clipped = clipped_ratio * &data.advantages;
-                let actor_loss = -unclipped.minimum(&clipped).mean(Kind::Float);
+                let actor_loss_tensor = -unclipped.minimum(&clipped).mean(Kind::Float);
 
                 let values = self.critic.forward(&data.states).squeeze_dim(1);
-                let critic_loss = values.mse_loss(&data.returns, Reduction::Mean);
+                let critic_loss_tensor = values.mse_loss(&data.returns, Reduction::Mean);
+
+                actor_loss = actor_loss_tensor.double_value(&[]);
+                critic_loss = critic_loss_tensor.double_value(&[]);
+                approx_kl = (&data.old_log_probs - &current_log_probs)
+                    .mean(Kind::Float)
+                    .double_value(&[]);
+                clip_fraction = (ratio - 1.0)
+                    .abs()
+                    .gt(self.config.clip)
+                    .to_kind(Kind::Float)
+                    .mean(Kind::Float)
+                    .double_value(&[]);
 
                 self.actor_optimizer.zero_grad();
-                actor_loss.backward();
+                actor_loss_tensor.backward();
                 self.actor_optimizer.step();
 
                 self.critic_optimizer.zero_grad();
-                critic_loss.backward();
+                critic_loss_tensor.backward();
                 self.critic_optimizer.step();
             }
+
+            iteration += 1;
+            on_update(&PpoMetrics {
+                iteration,
+                timesteps,
+                batch_timesteps,
+                episodes: episode_stats.len(),
+                mean_episode_return: mean_episode_metric(&episode_stats, |episode| {
+                    episode.reward_sum
+                }),
+                mean_episode_length: mean_episode_metric(&episode_stats, |episode| {
+                    episode.length as f32
+                }),
+                mean_final_score_difference: mean_episode_metric(&episode_stats, |episode| {
+                    episode.final_score_difference
+                }),
+                player_zero_win_rate: terminal_win_rate(&episode_stats),
+                actor_loss: actor_loss as f32,
+                critic_loss: critic_loss as f32,
+                approx_kl: approx_kl as f32,
+                clip_fraction: clip_fraction as f32,
+            });
         }
     }
 
@@ -294,7 +412,8 @@ impl PpoTrainer {
         let mut batch = RolloutBatch::with_capacity(self.config.timesteps_per_batch);
         while batch.len() < self.config.timesteps_per_batch {
             let mut state = env.reset(self.config.max_timesteps_per_episode);
-            for _ in 0..self.config.max_timesteps_per_episode {
+            let mut episode_return = 0.0;
+            for episode_length in 0..self.config.max_timesteps_per_episode {
                 let action_mask = env.action_mask();
                 let player = env.gamestate.get_active_player();
                 let (action, old_log_prob, value) =
@@ -313,6 +432,7 @@ impl PpoTrainer {
                             .double_value(&[0]) as f32
                     })
                 };
+                episode_return += result.reward;
 
                 batch.steps.push(RolloutStep {
                     state,
@@ -330,6 +450,16 @@ impl PpoTrainer {
                 state = result.next_state;
 
                 if result.terminated || result.truncated {
+                    let boards = env.gamestate.get_boards();
+                    let final_score_difference =
+                        boards[0].get_score() as f32 - boards[1].get_score() as f32;
+                    batch.episodes.push(EpisodeStats {
+                        reward_sum: episode_return,
+                        length: episode_length,
+                        final_score_difference,
+                        terminated: result.terminated,
+                        player_zero_won: result.terminated && env.gamestate.get_winner() == 0,
+                    });
                     break;
                 }
             }
@@ -418,6 +548,16 @@ mod tests {
         let mut trainer = PpoTrainer::new(config).expect("trainer should initialize");
         let mut environment = AzulEnv::new(0, config.max_timesteps_per_episode);
 
-        trainer.train(&mut environment, 1);
+        let mut callbacks = 0;
+        let mut reported_timesteps = 0;
+        trainer.train_with_callback(&mut environment, 1, |metrics| {
+            callbacks += 1;
+            reported_timesteps = metrics.timesteps;
+            assert_eq!(metrics.batch_timesteps, 1);
+            assert_eq!(metrics.episodes, 1);
+        });
+
+        assert_eq!(callbacks, 1);
+        assert_eq!(reported_timesteps, 1);
     }
 }

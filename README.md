@@ -68,8 +68,10 @@ installation; the rules and interface crates can be tested independently.
 The current trainer is intentionally a learning baseline rather than a full
 training system. It has no minibatches, entropy bonus, generalized advantage
 estimation, parallel rollout workers, checkpoint commands, or deterministic
-evaluation harness yet. See [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the
-algorithm and [`TODO.md`](TODO.md) for the remaining training-system work.
+evaluation harness yet. The executable writes scalar training diagnostics to
+`runs/azul_ppo` using TensorBoard event files. See
+[`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
+for the remaining training-system work.
 
 A minimal training session can be started from Rust with:
 
@@ -78,6 +80,16 @@ let config = rl_env::PpoConfig::default();
 let mut trainer = rl_env::PpoTrainer::new(config)?;
 let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
 trainer.train(&mut environment, 10_000);
+```
+
+The workspace executable runs the same training loop and writes TensorBoard
+events:
+
+```bash
+source scripts/activate-env.sh
+python -m pip install tensorboard  # once, if TensorBoard is not installed
+cargo run -p rl_env
+tensorboard --logdir runs
 ```
 
 ### `random_engine`
