@@ -100,8 +100,7 @@ impl Module for ResNetwork {
 
 pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
     let mut blocks = Vec::with_capacity(NUM_BLOCKS);
-    blocks.push(ResBlock::new(&(vs / "block0"), HIDDEN, HIDDEN));
-    for i in 0..NUM_BLOCKS - 1 {
+    for i in 0..NUM_BLOCKS {
         blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
     }
 
@@ -114,8 +113,7 @@ pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
 
 pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
     let mut blocks = Vec::with_capacity(NUM_BLOCKS);
-    blocks.push(ResBlock::new(&(vs / "block0"), HIDDEN, HIDDEN));
-    for i in 0..NUM_BLOCKS - 1 {
+    for i in 0..NUM_BLOCKS {
         blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
     }
 

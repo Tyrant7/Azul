@@ -331,6 +331,7 @@ impl AzulEnv {
 pub struct Transition {
     pub state: Tensor,
     pub action: usize,
+    pub log_probs: &Tensor,
     pub reward: f32,
     pub next_state: Tensor,
     pub terminated: bool,
@@ -342,6 +343,7 @@ impl Transition {
     pub fn new(
         state: &Tensor,
         action: usize,
+        log_probs: &Tensor,
         reward: f32,
         next_state: &Tensor,
         terminated: bool,
@@ -350,6 +352,7 @@ impl Transition {
         Transition {
             state: state.shallow_clone(),
             action,
+            log_probs,
             reward,
             next_state: next_state.shallow_clone(),
             terminated,
