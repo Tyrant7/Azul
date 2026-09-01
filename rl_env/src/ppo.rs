@@ -18,6 +18,8 @@ pub struct PpoConfig {
     pub learning_rate: f64,
     /// Discount factor used for rewards-to-go.
     pub gamma: f64,
+    /// GAE lambda smoothing parameter.
+    pub lambda: f64,
     /// PPO probability-ratio clipping range for disadvantaged actions.
     pub lower_clip_epsilon: f64,
     /// PPO probability-ratio clipping range for advantaged actions.
@@ -32,6 +34,7 @@ impl Default for PpoConfig {
             updates_per_iteration: 4,
             learning_rate: 3e-4,
             gamma: 0.99,
+            lambda: 0.95,
             lower_clip_epsilon: 0.2,
             upper_clip_epsilon: 0.28,
         }
@@ -116,7 +119,7 @@ impl RolloutBatch {
     }
 
     /// Converts rollout steps into tensors and computes normalized advantages.
-    fn into_data(self, gamma: f64) -> RolloutData {
+    fn into_data(self, gamma: f64, lambda: f64) -> RolloutData {
         let rewards: Vec<_> = self.steps.iter().map(|step| step.reward).collect();
         let players: Vec<_> = self.steps.iter().map(|step| step.player).collect();
         let next_players: Vec<_> = self.steps.iter().map(|step| step.next_player).collect();
@@ -169,7 +172,8 @@ impl RolloutBatch {
             Tensor::from_slice(&self.steps.iter().map(|step| step.value).collect::<Vec<_>>())
                 .to_device(get_device());
         let returns = Tensor::from_slice(&rewards_to_go).to_device(get_device());
-        let advantages = &returns - &values;
+        let rewards = Tensor::from_slice(&rewards).to_device(get_device());
+        let advantages = compute_gae(&rewards, &values, &returns, dones, gamma, lambda);
         let advantages =
             (&advantages - advantages.mean(Kind::Float)) / (advantages.std(false) + 1e-8);
 
@@ -348,7 +352,7 @@ impl PpoTrainer {
             let batch_timesteps = batch.len();
             let episode_stats = batch.episodes.clone();
             timesteps += batch_timesteps;
-            let data = batch.into_data(self.config.gamma);
+            let data = batch.into_data(self.config.gamma, self.config.lambda);
 
             let mut actor_loss = 0.0;
             let mut critic_loss = 0.0;
@@ -486,6 +490,28 @@ impl PpoTrainer {
     pub fn var_stores(&self) -> (&nn::VarStore, &nn::VarStore) {
         (&self.actor_vs, &self.critic_vs)
     }
+}
+
+fn compute_gae(
+    rewards: &Tensor,
+    values: &Tensor,
+    next_values: &Tensor,
+    dones: &Tensor,
+    gamma: f64,
+    lambda: f64,
+) -> Tensor {
+    let mut advantages = rewards.zeros_like();
+    let last_gae = 0.0;
+
+    for step in 0..rewards.size()[0] {
+        let non_terminal = 1.0 - dones.get(step);
+        let delta =
+            rewards.get(step) + gamma * next_values.get(step) * non_terminal - values.get(step);
+
+        last_gae = delta + gamma * lambda * non_terminal * last_gae;
+        advantages.i(step) = last_gae;
+    }
+    advantages
 }
 
 #[cfg(test)]
