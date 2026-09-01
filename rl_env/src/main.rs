@@ -15,7 +15,7 @@ fn main() -> Result<(), tch::TchError> {
     let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
     let mut writer = SummaryWriter::new(format!(
         "runs/azul_ppo/{}-{}",
-        "asymmetric_upper_clip_GAE",
+        "GAE_grad_clip",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -28,6 +28,26 @@ fn main() -> Result<(), tch::TchError> {
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| {
         writer.add_scalar("loss/actor", metrics.actor_loss, metrics.timesteps);
         writer.add_scalar("loss/critic", metrics.critic_loss, metrics.timesteps);
+        writer.add_scalar(
+            "gradient/actor_norm",
+            metrics.actor_grad_norm,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "gradient/critic_norm",
+            metrics.critic_grad_norm,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "gradient/actor_clip_coefficient",
+            metrics.actor_grad_clip_coefficient,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "gradient/critic_clip_coefficient",
+            metrics.critic_grad_clip_coefficient,
+            metrics.timesteps,
+        );
         writer.add_scalar("policy/approx_kl", metrics.approx_kl, metrics.timesteps);
         writer.add_scalar(
             "policy/clip_fraction",
@@ -62,11 +82,13 @@ fn main() -> Result<(), tch::TchError> {
         writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} actor_grad={:.3} critic_grad={:.3} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
             metrics.critic_loss,
+            metrics.actor_grad_norm,
+            metrics.critic_grad_norm,
             metrics.approx_kl,
             metrics.clip_fraction,
             metrics.mean_final_score_difference,

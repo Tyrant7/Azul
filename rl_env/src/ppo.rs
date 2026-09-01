@@ -16,6 +16,8 @@ pub struct PpoConfig {
     pub updates_per_iteration: usize,
     /// Adam learning rate used by both actor and critic.
     pub learning_rate: f64,
+    /// Maximum global L2 norm applied to actor and critic gradients.
+    pub max_grad_norm: f64,
     /// Discount factor used for return and advantage estimates.
     pub gamma: f64,
     /// GAE lambda smoothing parameter.
@@ -33,6 +35,7 @@ impl Default for PpoConfig {
             max_timesteps_per_episode: 1_000,
             updates_per_iteration: 4,
             learning_rate: 3e-4,
+            max_grad_norm: 0.5,
             gamma: 0.99,
             lambda: 0.95,
             lower_clip_epsilon: 0.2,
@@ -66,6 +69,14 @@ pub struct PpoMetrics {
     pub actor_loss: f32,
     /// Critic mean-squared error from the final update epoch.
     pub critic_loss: f32,
+    /// Actor global gradient norm measured before clipping in the final epoch.
+    pub actor_grad_norm: f32,
+    /// Critic global gradient norm measured before clipping in the final epoch.
+    pub critic_grad_norm: f32,
+    /// Actor gradient scaling coefficient applied by global-norm clipping.
+    pub actor_grad_clip_coefficient: f32,
+    /// Critic gradient scaling coefficient applied by global-norm clipping.
+    pub critic_grad_clip_coefficient: f32,
     /// Approximate KL divergence from the rollout policy in the final epoch.
     pub approx_kl: f32,
     /// Fraction of samples outside the PPO clipping range in the final epoch.
@@ -273,6 +284,7 @@ impl PpoTrainer {
         assert!(config.timesteps_per_batch > 0);
         assert!(config.max_timesteps_per_episode > 0);
         assert!(config.updates_per_iteration > 0);
+        assert!(config.max_grad_norm.is_finite() && config.max_grad_norm > 0.0);
         assert!(config.gamma >= 0.0 && config.gamma <= 1.0);
         assert!(config.lambda >= 0.0 && config.lambda <= 1.0);
         assert!(config.lower_clip_epsilon > 0.0);
@@ -321,6 +333,10 @@ impl PpoTrainer {
 
             let mut actor_loss = 0.0;
             let mut critic_loss = 0.0;
+            let mut actor_grad_norm = 0.0;
+            let mut critic_grad_norm = 0.0;
+            let mut actor_grad_clip_coefficient = 1.0;
+            let mut critic_grad_clip_coefficient = 1.0;
             let mut approx_kl = 0.0;
             let mut clip_fraction = 0.0;
             for _ in 0..self.config.updates_per_iteration {
@@ -355,10 +371,20 @@ impl PpoTrainer {
 
                 self.actor_optimizer.zero_grad();
                 actor_loss_tensor.backward();
+                actor_grad_norm = gradient_norm(&self.actor_vs);
+                actor_grad_clip_coefficient =
+                    gradient_clip_coefficient(actor_grad_norm, self.config.max_grad_norm);
+                self.actor_optimizer
+                    .clip_grad_norm(self.config.max_grad_norm);
                 self.actor_optimizer.step();
 
                 self.critic_optimizer.zero_grad();
                 critic_loss_tensor.backward();
+                critic_grad_norm = gradient_norm(&self.critic_vs);
+                critic_grad_clip_coefficient =
+                    gradient_clip_coefficient(critic_grad_norm, self.config.max_grad_norm);
+                self.critic_optimizer
+                    .clip_grad_norm(self.config.max_grad_norm);
                 self.critic_optimizer.step();
             }
 
@@ -383,6 +409,10 @@ impl PpoTrainer {
                 player_zero_win_rate: terminal_win_rate(&episode_stats),
                 actor_loss: actor_loss as f32,
                 critic_loss: critic_loss as f32,
+                actor_grad_norm,
+                critic_grad_norm,
+                actor_grad_clip_coefficient,
+                critic_grad_clip_coefficient,
                 approx_kl: approx_kl as f32,
                 clip_fraction: clip_fraction as f32,
             });
@@ -455,6 +485,31 @@ impl PpoTrainer {
     pub fn var_stores(&self) -> (&nn::VarStore, &nn::VarStore) {
         (&self.actor_vs, &self.critic_vs)
     }
+}
+
+/// Computes the global L2 norm of all defined gradients in a parameter store.
+fn gradient_norm(var_store: &nn::VarStore) -> f32 {
+    no_grad(|| {
+        let squared_norms: Vec<_> = var_store
+            .trainable_variables()
+            .into_iter()
+            .map(|variable| variable.grad())
+            .filter(|gradient| gradient.defined())
+            .map(|gradient| gradient.square().sum(Kind::Float))
+            .collect();
+        if squared_norms.is_empty() {
+            return 0.0;
+        }
+        Tensor::stack(&squared_norms, 0)
+            .sum(Kind::Float)
+            .sqrt()
+            .double_value(&[]) as f32
+    })
+}
+
+/// Returns the global-norm scaling coefficient that clipping will apply.
+fn gradient_clip_coefficient(gradient_norm: f32, maximum_norm: f64) -> f32 {
+    (maximum_norm / (gradient_norm as f64 + 1e-6)).min(1.0) as f32
 }
 
 /// Computes player-relative generalized advantage estimates over a rollout.

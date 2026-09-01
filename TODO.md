@@ -55,7 +55,7 @@
 ### Model and training runtime
 - Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
 - Harden observation encoding, policy logits, value prediction, and batched inference with golden tests
-- Extend the current loss and optimizer path with gradient clipping, learning-rate schedules, and entropy/value-loss weighting
+- Extend the current loss and optimizer path with learning-rate schedules and entropy/value-loss weighting
 - Implement rollout workers and an actor/learner data path
 - Support configurable parallel environments, inference batches, rollout length, and update frequency
 - Add checkpoint save/load for model weights, optimizer state, scheduler state, counters, configuration, and RNG state
