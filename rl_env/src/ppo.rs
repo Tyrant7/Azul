@@ -16,7 +16,7 @@ pub struct PpoConfig {
     pub updates_per_iteration: usize,
     /// Adam learning rate used by both actor and critic.
     pub learning_rate: f64,
-    /// Discount factor used for rewards-to-go.
+    /// Discount factor used for return and advantage estimates.
     pub gamma: f64,
     /// GAE lambda smoothing parameter.
     pub lambda: f64,
@@ -125,16 +125,8 @@ impl RolloutBatch {
         let next_players: Vec<_> = self.steps.iter().map(|step| step.next_player).collect();
         let terminated: Vec<_> = self.steps.iter().map(|step| step.terminated).collect();
         let truncated: Vec<_> = self.steps.iter().map(|step| step.truncated).collect();
+        let values: Vec<_> = self.steps.iter().map(|step| step.value).collect();
         let next_values: Vec<_> = self.steps.iter().map(|step| step.next_value).collect();
-        let rewards_to_go = compute_rewards_to_go(
-            &rewards,
-            &players,
-            &next_players,
-            &terminated,
-            &truncated,
-            &next_values,
-            gamma,
-        );
 
         let states = Tensor::stack(
             &self
@@ -168,14 +160,23 @@ impl RolloutBatch {
                 .collect::<Vec<_>>(),
         )
         .to_device(get_device());
-        let values =
-            Tensor::from_slice(&self.steps.iter().map(|step| step.value).collect::<Vec<_>>())
-                .to_device(get_device());
-        let returns = Tensor::from_slice(&rewards_to_go).to_device(get_device());
-        let rewards = Tensor::from_slice(&rewards).to_device(get_device());
-        let advantages = compute_gae(&rewards, &values, &returns, dones, gamma, lambda);
-        let advantages =
-            (&advantages - advantages.mean(Kind::Float)) / (advantages.std(false) + 1e-8);
+
+        let raw_advantages = compute_gae(
+            &rewards,
+            &values,
+            &next_values,
+            &players,
+            &next_players,
+            &terminated,
+            &truncated,
+            gamma,
+            lambda,
+        );
+        let values = Tensor::from_slice(&values).to_device(get_device());
+        let raw_advantages = Tensor::from_slice(&raw_advantages).to_device(get_device());
+        let returns = &raw_advantages + &values;
+        let advantages = (&raw_advantages - raw_advantages.mean(Kind::Float))
+            / (raw_advantages.std(false) + 1e-8);
 
         RolloutData {
             states,
@@ -196,43 +197,6 @@ struct RolloutData {
     old_log_probs: Tensor,
     returns: Tensor,
     advantages: Tensor,
-}
-
-/// Computes discounted rewards-to-go, accounting for Azul's changing player perspective.
-fn compute_rewards_to_go(
-    rewards: &[f32],
-    players: &[usize],
-    next_players: &[usize],
-    terminated: &[bool],
-    truncated: &[bool],
-    next_values: &[f32],
-    gamma: f64,
-) -> Vec<f32> {
-    assert_eq!(rewards.len(), players.len());
-    assert_eq!(rewards.len(), next_players.len());
-    assert_eq!(rewards.len(), terminated.len());
-    assert_eq!(rewards.len(), truncated.len());
-    assert_eq!(rewards.len(), next_values.len());
-
-    let mut rewards_to_go = vec![0.0; rewards.len()];
-    let mut next_return = 0.0;
-    for index in (0..rewards.len()).rev() {
-        let continuation = if terminated[index] {
-            0.0
-        } else if truncated[index] {
-            next_values[index]
-        } else {
-            next_return
-        };
-        let perspective = if players[index] == next_players[index] {
-            1.0
-        } else {
-            -1.0
-        };
-        rewards_to_go[index] = rewards[index] + gamma as f32 * perspective * continuation;
-        next_return = rewards_to_go[index];
-    }
-    rewards_to_go
 }
 
 /// Applies the legal-action mask and returns log-probabilities over actions.
@@ -310,6 +274,7 @@ impl PpoTrainer {
         assert!(config.max_timesteps_per_episode > 0);
         assert!(config.updates_per_iteration > 0);
         assert!(config.gamma >= 0.0 && config.gamma <= 1.0);
+        assert!(config.lambda >= 0.0 && config.lambda <= 1.0);
         assert!(config.lower_clip_epsilon > 0.0);
         assert!(config.upper_clip_epsilon > 0.0);
 
@@ -492,59 +457,87 @@ impl PpoTrainer {
     }
 }
 
+/// Computes player-relative generalized advantage estimates over a rollout.
 fn compute_gae(
-    rewards: &Tensor,
-    values: &Tensor,
-    next_values: &Tensor,
-    dones: &Tensor,
+    rewards: &[f32],
+    values: &[f32],
+    next_values: &[f32],
+    players: &[usize],
+    next_players: &[usize],
+    terminated: &[bool],
+    truncated: &[bool],
     gamma: f64,
     lambda: f64,
-) -> Tensor {
-    let mut advantages = rewards.zeros_like();
-    let last_gae = 0.0;
+) -> Vec<f32> {
+    assert_eq!(rewards.len(), values.len());
+    assert_eq!(rewards.len(), next_values.len());
+    assert_eq!(rewards.len(), players.len());
+    assert_eq!(rewards.len(), next_players.len());
+    assert_eq!(rewards.len(), terminated.len());
+    assert_eq!(rewards.len(), truncated.len());
 
-    for step in 0..rewards.size()[0] {
-        let non_terminal = 1.0 - dones.get(step);
-        let delta =
-            rewards.get(step) + gamma * next_values.get(step) * non_terminal - values.get(step);
+    let timesteps = rewards.len();
+    let mut advantages = vec![0.0; timesteps];
+    let mut last_gae = 0.0;
 
-        last_gae = delta + gamma * lambda * non_terminal * last_gae;
-        advantages.i(step) = last_gae;
+    for step in (0..timesteps).rev() {
+        let perspective = if players[step] == next_players[step] {
+            1.0
+        } else {
+            -1.0
+        };
+        // A time-limit truncation still has a valid next-state value.
+        let bootstrap_mask = if terminated[step] { 0.0 } else { 1.0 };
+        // Do not let the trace cross either a terminal state or an environment reset.
+        let trace_mask = if terminated[step] || truncated[step] {
+            0.0
+        } else {
+            1.0
+        };
+        let delta = rewards[step] + gamma as f32 * perspective * bootstrap_mask * next_values[step]
+            - values[step];
+
+        last_gae = delta + gamma as f32 * lambda as f32 * perspective * trace_mask * last_gae;
+        advantages[step] = last_gae;
     }
     advantages
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AzulEnv, PpoConfig, PpoTrainer, compute_rewards_to_go};
+    use super::{AzulEnv, PpoConfig, PpoTrainer, compute_gae};
     use tch::{Kind, Tensor};
 
     #[test]
-    fn rewards_to_go_matches_discounted_returns() {
+    fn gae_recurses_backward() {
         assert_eq!(
-            compute_rewards_to_go(
-                &[1.0, 2.0, 3.0],
-                &[0, 0, 0],
-                &[0, 0, 0],
-                &[false, false, true],
-                &[false, false, false],
-                &[0.0, 0.0, 0.0],
+            compute_gae(
+                &[1.0, 2.0],
+                &[0.0, 0.0],
+                &[0.0, 0.0],
+                &[0, 0],
+                &[0, 0],
+                &[false, true],
+                &[false, false],
                 1.0,
+                0.5,
             ),
-            vec![6.0, 5.0, 3.0]
+            vec![2.0, 2.0]
         );
     }
 
     #[test]
-    fn rewards_to_go_flips_between_two_player_perspectives() {
+    fn gae_flips_between_two_player_perspectives() {
         assert_eq!(
-            compute_rewards_to_go(
+            compute_gae(
                 &[0.0, 0.0, 4.0],
+                &[0.0, 0.0, 0.0],
+                &[0.0, 0.0, 0.0],
                 &[0, 1, 0],
                 &[1, 0, 1],
                 &[false, false, true],
                 &[false, false, false],
-                &[0.0, 0.0, 0.0],
+                1.0,
                 1.0,
             ),
             vec![4.0, -4.0, 4.0]
@@ -552,10 +545,20 @@ mod tests {
     }
 
     #[test]
-    fn truncated_rollouts_bootstrap_from_the_next_value() {
+    fn gae_bootstraps_truncation_without_crossing_episode_boundary() {
         assert_eq!(
-            compute_rewards_to_go(&[0.0], &[0], &[1], &[false], &[true], &[2.0], 0.99,),
-            vec![-1.98]
+            compute_gae(
+                &[0.0, 5.0],
+                &[0.0, 0.0],
+                &[2.0, 0.0],
+                &[0, 0],
+                &[0, 0],
+                &[false, true],
+                &[true, false],
+                1.0,
+                1.0,
+            ),
+            vec![2.0, 5.0]
         );
     }
 
