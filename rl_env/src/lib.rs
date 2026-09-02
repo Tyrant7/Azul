@@ -17,7 +17,6 @@ const BOWL_SLOTS: usize = FACTORY_BOWLS + 1;
 const CENTRE_SLOT: usize = 0;
 const FACTORY_SLOT_OFFSET: usize = 1;
 const DESTINATIONS_PER_ACTION: usize = BOARD_SIZE + 1;
-const PLAYER_COUNT_FEATURES: usize = PLAYER_COUNT - 1;
 const FIRST_TOKEN_FEATURES: usize = PLAYER_COUNT + 1;
 const SCORE_SCALE: f32 = 100.0;
 const MAX_PENALTY_SPACES: f32 = 8.0;
@@ -34,7 +33,6 @@ pub const ACTION_SPACE_SIZE: usize = BOWL_SLOTS * TILE_TYPES * DESTINATIONS_PER_
 pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
     + PLAYER_COUNT * BOARD_FEATURES_PER_PLAYER
     + TILE_TYPES
-    + PLAYER_COUNT_FEATURES
     + FIRST_TOKEN_FEATURES
     + 2;
 
@@ -110,8 +108,6 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
     );
     let encoded_boards = encode_boards(&ordered_boards);
     let encoded_bag = encode_bag(gamestate.get_bag());
-    let mut player_count_encoding = vec![0.0_f32; PLAYER_COUNT_FEATURES];
-    player_count_encoding[player_count - 2] = 1.0;
 
     // The first-token owner is encoded relative to the active player: 0 is None, 1 is active.
     let mut first_token_encoding = vec![0.0_f32; FIRST_TOKEN_FEATURES];
@@ -133,7 +129,6 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
             encoded_bowls,
             encoded_boards,
             encoded_bag,
-            Tensor::from_slice(&player_count_encoding).to_device(get_device()),
             Tensor::from_slice(&first_token_encoding).to_device(get_device()),
             Tensor::from_slice(&round_over_encoding).to_device(get_device()),
             Tensor::from_slice(&game_over_encoding).to_device(get_device()),
@@ -546,7 +541,7 @@ mod tests {
         assert_eq!(FACTORY_BOWLS, 5);
         assert_eq!(BOWL_SLOTS, 6);
         assert_eq!(ACTION_SPACE_SIZE, 180);
-        assert_eq!(OBSERVATION_SIZE, 387);
+        assert_eq!(OBSERVATION_SIZE, 386);
         assert_eq!(environment.action_mask().numel(), ACTION_SPACE_SIZE);
         assert_eq!(
             encode_gamestate(environment.get_gamestate()).numel(),
