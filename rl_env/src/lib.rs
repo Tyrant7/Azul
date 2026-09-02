@@ -13,6 +13,8 @@ const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const MAX_PLAYERS: usize = 4;
 const TILE_TYPES: usize = 5;
 const MAX_BOWLS: usize = 2 * MAX_PLAYERS + 2;
+const CENTRE_SLOT: usize = 0;
+const FACTORY_SLOT_OFFSET: usize = 1;
 const DESTINATIONS_PER_ACTION: usize = BOARD_SIZE + 1;
 const PLAYER_COUNT_FEATURES: usize = MAX_PLAYERS - 1;
 const FIRST_TOKEN_FEATURES: usize = MAX_PLAYERS + 1;
@@ -37,6 +39,58 @@ pub const OBSERVATION_SIZE: usize = MAX_BOWLS * TILE_TYPES
     + FIRST_TOKEN_FEATURES
     + 2;
 
+/// Maps canonical RL factory slots to physical factory indices; the centre is
+/// always kept separately in slot zero.
+#[derive(Debug, Clone)]
+struct FactoryOrder {
+    canonical_to_physical: Vec<usize>,
+    physical_to_canonical: Vec<usize>,
+}
+
+impl FactoryOrder {
+    /// Builds a deterministic order with non-empty factories before empty ones.
+    fn new(factories: &[Bowl]) -> Self {
+        let mut canonical_to_physical: Vec<_> = (0..factories.len()).collect();
+        canonical_to_physical.sort_by_key(|&physical_index| {
+            let bowl = &factories[physical_index];
+            (
+                bowl.get_tiles().is_empty(),
+                bowl_tile_counts(bowl),
+                physical_index,
+            )
+        });
+
+        let mut physical_to_canonical = vec![0; factories.len()];
+        for (canonical_index, &physical_index) in canonical_to_physical.iter().enumerate() {
+            physical_to_canonical[physical_index] = canonical_index;
+        }
+
+        Self {
+            canonical_to_physical,
+            physical_to_canonical,
+        }
+    }
+
+    /// Returns the physical factory index for a canonical RL slot.
+    fn physical_index(&self, canonical_index: usize) -> Option<usize> {
+        self.canonical_to_physical.get(canonical_index).copied()
+    }
+
+    /// Returns the canonical RL slot for a physical factory index.
+    fn canonical_index(&self, physical_index: usize) -> Option<usize> {
+        self.physical_to_canonical.get(physical_index).copied()
+    }
+}
+
+/// Returns a complete tile-count key for deterministic factory ordering.
+fn bowl_tile_counts(bowl: &Bowl) -> [u8; TILE_TYPES] {
+    let mut counts = [0; TILE_TYPES];
+    for &tile_type in bowl.get_tiles() {
+        counts[tile_type] += 1;
+    }
+    counts
+}
+
 /// Encodes a game state from the active player's perspective.
 fn encode_gamestate(gamestate: &GameState) -> Tensor {
     let player_count = gamestate.get_boards().len();
@@ -49,7 +103,12 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
         .map(|&player| gamestate.get_boards()[player])
         .collect();
 
-    let encoded_bowls = encode_bowls(gamestate.get_centre_bowl(), gamestate.get_factory_bowls());
+    let factory_order = FactoryOrder::new(gamestate.get_factory_bowls());
+    let encoded_bowls = encode_bowls(
+        gamestate.get_centre_bowl(),
+        gamestate.get_factory_bowls(),
+        &factory_order,
+    );
     let encoded_boards = encode_boards(&ordered_boards);
     let encoded_bag = encode_bag(gamestate.get_bag());
     let mut player_count_encoding = vec![0.0_f32; PLAYER_COUNT_FEATURES];
@@ -85,15 +144,17 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
     .to_device(get_device())
 }
 
-/// Encodes each bowl as normalized tile-type counts, padding to four players.
-fn encode_bowls(centre: &Bowl, factories: &[Bowl]) -> Tensor {
+/// Encodes the centre in slot zero and canonical factories in later slots.
+/// The centre remains first even when it is empty.
+fn encode_bowls(centre: &Bowl, factories: &[Bowl], order: &FactoryOrder) -> Tensor {
     let mut encoded_bowls = vec![0.0_f32; MAX_BOWLS * TILE_TYPES];
     for &tile_type in centre.get_tiles() {
         encoded_bowls[tile_type] += 1.0 / 20.0;
     }
-    for (factory_index, bowl) in factories.iter().enumerate() {
+    for (canonical_index, &physical_index) in order.canonical_to_physical.iter().enumerate() {
+        let bowl = &factories[physical_index];
         for &tile_type in bowl.get_tiles() {
-            let index = (factory_index + 1) * TILE_TYPES + tile_type;
+            let index = (canonical_index + FACTORY_SLOT_OFFSET) * TILE_TYPES + tile_type;
             encoded_bowls[index] += 1.0 / 4.0;
         }
     }
@@ -235,8 +296,9 @@ impl AzulEnv {
     pub fn action_mask(&self) -> Tensor {
         let mut mask = vec![0.0; ACTION_SPACE_SIZE];
         if !self.gamestate.is_game_over() && self.steps < self.max_steps {
+            let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
             for choice in self.gamestate.get_valid_moves() {
-                if let Some(action) = Self::action_for_move(&choice) {
+                if let Some(action) = Self::action_for_move(&choice, &factory_order) {
                     mask[action] = 1.0;
                 }
             }
@@ -250,7 +312,8 @@ impl AzulEnv {
             return Err(IllegalMoveError);
         }
 
-        let choice = Self::map_action(action).ok_or(IllegalMoveError)?;
+        let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
+        let choice = Self::map_action(action, &factory_order).ok_or(IllegalMoveError)?;
         let acting_player = self.gamestate.get_active_player();
         let before_scores: Vec<i64> = self
             .gamestate
@@ -291,14 +354,16 @@ impl AzulEnv {
     }
 
     /// Converts a fixed action index into a move when its components are in range.
-    fn map_action(action: usize) -> Option<Move> {
+    fn map_action(action: usize, factory_order: &FactoryOrder) -> Option<Move> {
         if action >= ACTION_SPACE_SIZE {
             return None;
         }
 
         let bowl = match action / (TILE_TYPES * DESTINATIONS_PER_ACTION) {
-            0 => BowlChoice::Centre,
-            bowl => BowlChoice::Factory(bowl - 1),
+            CENTRE_SLOT => BowlChoice::Centre,
+            canonical_index => BowlChoice::Factory(
+                factory_order.physical_index(canonical_index - FACTORY_SLOT_OFFSET)?,
+            ),
         };
         let tile_type = (action / DESTINATIONS_PER_ACTION) % TILE_TYPES;
         let row = match action % DESTINATIONS_PER_ACTION {
@@ -313,15 +378,17 @@ impl AzulEnv {
     }
 
     /// Converts a move to its canonical fixed action index.
-    fn action_for_move(choice: &Move) -> Option<usize> {
+    fn action_for_move(choice: &Move, factory_order: &FactoryOrder) -> Option<usize> {
         let row = match choice.row {
             Row::Floor => 0,
             Row::Wall(row) if row < BOARD_SIZE => row + 1,
             Row::Wall(_) => return None,
         };
         let bowl = match choice.bowl {
-            BowlChoice::Centre => 0,
-            BowlChoice::Factory(index) => index.checked_add(1)?,
+            BowlChoice::Centre => CENTRE_SLOT,
+            BowlChoice::Factory(index) => factory_order
+                .canonical_index(index)?
+                .checked_add(FACTORY_SLOT_OFFSET)?,
         };
         if bowl >= MAX_BOWLS || choice.tile_type >= TILE_TYPES {
             return None;
@@ -332,5 +399,142 @@ impl AzulEnv {
     /// Returns the current game state used by the environment.
     pub fn get_gamestate(&self) -> &GameState {
         &self.gamestate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_factories(factory_bowls: Vec<Bowl>) -> GameState {
+        GameState::builder()
+            .boards(vec![Board::default(); 2])
+            .centre_bowl(Bowl::default())
+            .factory_bowls(factory_bowls)
+            .bag(Bag::<Tile>::default())
+            .set_seed(1)
+            .build()
+            .expect("test game state should be valid")
+    }
+
+    #[test]
+    fn factory_order_places_empty_bowls_last_and_is_reversible() {
+        let factories = vec![
+            Bowl::default(),
+            Bowl::from_tiles(vec![2, 2]),
+            Bowl::from_tiles(vec![0]),
+            Bowl::default(),
+            Bowl::from_tiles(vec![1]),
+        ];
+        let order = FactoryOrder::new(&factories);
+
+        let first_empty = order
+            .canonical_to_physical
+            .iter()
+            .position(|&physical| factories[physical].get_tiles().is_empty())
+            .expect("there should be an empty factory");
+        assert!(
+            order.canonical_to_physical[first_empty..]
+                .iter()
+                .all(|&physical| factories[physical].get_tiles().is_empty())
+        );
+
+        for physical_index in 0..factories.len() {
+            let canonical_index = order
+                .canonical_index(physical_index)
+                .expect("physical factory should have a canonical slot");
+            assert_eq!(order.physical_index(canonical_index), Some(physical_index));
+        }
+    }
+
+    #[test]
+    fn permuting_physical_factories_preserves_observation_and_action_mask() {
+        let factories = vec![
+            Bowl::from_tiles(vec![0, 0]),
+            Bowl::default(),
+            Bowl::from_tiles(vec![3]),
+            Bowl::from_tiles(vec![1, 1, 1]),
+            Bowl::default(),
+        ];
+        let permuted = vec![
+            factories[3].clone(),
+            factories[0].clone(),
+            factories[4].clone(),
+            factories[2].clone(),
+            factories[1].clone(),
+        ];
+        let first_state = state_with_factories(factories);
+        let second_state = state_with_factories(permuted);
+        let first_environment = AzulEnv {
+            gamestate: first_state,
+            max_steps: 100,
+            steps: 0,
+        };
+        let second_environment = AzulEnv {
+            gamestate: second_state,
+            max_steps: 100,
+            steps: 0,
+        };
+
+        assert!(
+            encode_gamestate(first_environment.get_gamestate()).allclose(
+                &encode_gamestate(second_environment.get_gamestate()),
+                1e-6,
+                1e-6,
+                false,
+            )
+        );
+        assert!(first_environment.action_mask().allclose(
+            &second_environment.action_mask(),
+            1e-6,
+            1e-6,
+            false
+        ));
+    }
+
+    #[test]
+    fn canonical_action_maps_back_to_the_physical_factory() {
+        let factories = vec![
+            Bowl::from_tiles(vec![0]),
+            Bowl::default(),
+            Bowl::from_tiles(vec![3]),
+            Bowl::from_tiles(vec![1]),
+            Bowl::default(),
+        ];
+        let order = FactoryOrder::new(&factories);
+        let physical_move = Move {
+            bowl: BowlChoice::Factory(2),
+            tile_type: 3,
+            row: Row::Floor,
+        };
+        let action = AzulEnv::action_for_move(&physical_move, &order)
+            .expect("test move should have a valid action index");
+
+        assert_eq!(AzulEnv::map_action(action, &order), Some(physical_move));
+    }
+
+    #[test]
+    fn empty_centre_remains_in_the_first_rl_slot() {
+        let factories = vec![
+            Bowl::default(),
+            Bowl::from_tiles(vec![2]),
+            Bowl::from_tiles(vec![0]),
+            Bowl::default(),
+            Bowl::from_tiles(vec![1]),
+        ];
+        let order = FactoryOrder::new(&factories);
+        let empty_centre = Bowl::default();
+        let encoded = encode_bowls(&empty_centre, &factories, &order);
+        let centre_move = Move {
+            bowl: BowlChoice::Centre,
+            tile_type: 0,
+            row: Row::Floor,
+        };
+        let action = AzulEnv::action_for_move(&centre_move, &order)
+            .expect("centre action should have a valid action index");
+
+        assert_eq!(action, CENTRE_SLOT * TILE_TYPES * DESTINATIONS_PER_ACTION);
+        assert_eq!(AzulEnv::map_action(action, &order), Some(centre_move));
+        assert_eq!(encoded.double_value(&[CENTRE_SLOT as i64]), 0.0);
     }
 }
