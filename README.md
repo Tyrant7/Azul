@@ -54,22 +54,22 @@ The interface executable parses CLI configuration, can spawn configured child pr
 [`rl_env/`](rl_env/) provides a two-player environment with `reset`, `step`,
 terminal/truncation status, rewards, legal-action masks, and a minimal
 on-policy PPO trainer. `PpoTrainer` collects complete episodes into a
-temporary rollout batch, computes discounted rewards-to-go, and performs
+temporary rollout batch, computes GAE advantages and value targets, and performs
 full-batch clipped PPO updates before discarding that batch; it does not use
 an off-policy replay buffer. Observations are fixed-size and player-relative:
 the active player's board is first, the centre is encoded separately from
-factory bowls, and the action space reserves ten wire bowl slots for the
-four-player maximum. The policy is a categorical distribution over the fixed
-action space, with illegal actions masked before sampling and likelihood
-evaluation.
+factory bowls, and the two-player action space contains six source slots
+(centre plus five factories), five tile types, and six destinations. The
+policy is a categorical distribution over this fixed 180-action space, with
+illegal actions masked before sampling and likelihood evaluation.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 
 The current trainer is intentionally a learning baseline rather than a full
-training system. It has no minibatches, entropy bonus, generalized advantage
-estimation, parallel rollout workers, checkpoint commands, or deterministic
-evaluation harness yet. The executable writes scalar training diagnostics to
-`runs/azul_ppo` using TensorBoard event files. See
+training system. It has no minibatches, entropy bonus, parallel rollout
+workers, checkpoint commands, or deterministic evaluation harness yet. It
+uses generalized advantage estimation and writes scalar training diagnostics
+to `runs/azul_ppo` using TensorBoard event files. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
 

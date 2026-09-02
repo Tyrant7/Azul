@@ -10,14 +10,15 @@ pub mod ppo;
 pub use ppo::{PpoConfig, PpoMetrics, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
-const MAX_PLAYERS: usize = 2;
+const PLAYER_COUNT: usize = 2;
 const TILE_TYPES: usize = 5;
-const MAX_BOWLS: usize = 2 * MAX_PLAYERS + 2;
+const FACTORY_BOWLS: usize = 2 * PLAYER_COUNT + 1;
+const BOWL_SLOTS: usize = FACTORY_BOWLS + 1;
 const CENTRE_SLOT: usize = 0;
 const FACTORY_SLOT_OFFSET: usize = 1;
 const DESTINATIONS_PER_ACTION: usize = BOARD_SIZE + 1;
-const PLAYER_COUNT_FEATURES: usize = MAX_PLAYERS - 1;
-const FIRST_TOKEN_FEATURES: usize = MAX_PLAYERS + 1;
+const PLAYER_COUNT_FEATURES: usize = PLAYER_COUNT - 1;
+const FIRST_TOKEN_FEATURES: usize = PLAYER_COUNT + 1;
 const SCORE_SCALE: f32 = 100.0;
 const MAX_PENALTY_SPACES: f32 = 8.0;
 const MAX_PENALTY_TILES: f32 = 7.0;
@@ -26,12 +27,12 @@ const BOARD_FEATURES_PER_PLAYER: usize =
     BOARD_SIZE * BOARD_SIZE * TILE_TYPES + BOARD_SIZE * (TILE_TYPES + 1) + 2 + 1 + 3 * BOARD_SIZE;
 
 /// Number of discrete actions in the fixed wire-bowl/tile/destination action space.
-/// Wire bowl slot zero is the centre; unused slots for smaller games are masked.
-pub const ACTION_SPACE_SIZE: usize = MAX_BOWLS * TILE_TYPES * DESTINATIONS_PER_ACTION;
+/// Wire bowl slot zero is the centre, followed by the five two-player factories.
+pub const ACTION_SPACE_SIZE: usize = BOWL_SLOTS * TILE_TYPES * DESTINATIONS_PER_ACTION;
 
 /// Number of values in every encoded, active-player-relative observation.
-pub const OBSERVATION_SIZE: usize = MAX_BOWLS * TILE_TYPES
-    + MAX_PLAYERS * BOARD_FEATURES_PER_PLAYER
+pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
+    + PLAYER_COUNT * BOARD_FEATURES_PER_PLAYER
     + TILE_TYPES
     + PLAYER_COUNT_FEATURES
     + FIRST_TOKEN_FEATURES
@@ -145,7 +146,7 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
 /// Encodes the centre in slot zero and canonical factories in later slots.
 /// The centre remains first even when it is empty.
 fn encode_bowls(centre: &Bowl, factories: &[Bowl], order: &FactoryOrder) -> Tensor {
-    let mut encoded_bowls = vec![0.0_f32; MAX_BOWLS * TILE_TYPES];
+    let mut encoded_bowls = vec![0.0_f32; BOWL_SLOTS * TILE_TYPES];
     for &tile_type in centre.get_tiles() {
         encoded_bowls[tile_type] += 1.0 / 20.0;
     }
@@ -207,7 +208,7 @@ fn encode_boards(boards: &[Board]) -> Tensor {
     }
     encoded_boards.extend(std::iter::repeat_n(
         0.0,
-        (MAX_PLAYERS - boards.len()) * BOARD_FEATURES_PER_PLAYER,
+        (PLAYER_COUNT - boards.len()) * BOARD_FEATURES_PER_PLAYER,
     ));
 
     Tensor::from_slice(&encoded_boards).to_device(get_device())
@@ -263,7 +264,8 @@ impl AzulEnv {
     /// Creates a two-player environment with a seeded, playable first round.
     pub fn new(seed: u64, max_steps: usize) -> Self {
         let mut environment = AzulEnv {
-            gamestate: GameState::new(2, seed).expect("two-player game state must be valid"),
+            gamestate: GameState::new(PLAYER_COUNT, seed)
+                .expect("two-player game state must be valid"),
             max_steps,
             steps: 0,
         };
@@ -273,7 +275,8 @@ impl AzulEnv {
 
     /// Resets the environment with an explicit seed and starts a playable round.
     pub fn seeded_reset(&mut self, seed: u64, max_steps: usize) -> Tensor {
-        self.gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
+        self.gamestate =
+            GameState::new(PLAYER_COUNT, seed).expect("two-player game state must be valid");
         self.steps = 0;
         self.max_steps = max_steps;
         self.gamestate.setup_next_round();
@@ -282,8 +285,8 @@ impl AzulEnv {
 
     /// Resets the environment with a random seed and starts a playable round.
     pub fn reset(&mut self, max_steps: usize) -> Tensor {
-        self.gamestate =
-            GameState::new(2, rand::random()).expect("two-player game state must be valid");
+        self.gamestate = GameState::new(PLAYER_COUNT, rand::random())
+            .expect("two-player game state must be valid");
         self.steps = 0;
         self.max_steps = max_steps;
         self.gamestate.setup_next_round();
@@ -388,7 +391,7 @@ impl AzulEnv {
                 .canonical_index(index)?
                 .checked_add(FACTORY_SLOT_OFFSET)?,
         };
-        if bowl >= MAX_BOWLS || choice.tile_type >= TILE_TYPES {
+        if bowl >= BOWL_SLOTS || choice.tile_type >= TILE_TYPES {
             return None;
         }
         Some((bowl * TILE_TYPES + choice.tile_type) * DESTINATIONS_PER_ACTION + row)
@@ -534,5 +537,20 @@ mod tests {
         assert_eq!(action, CENTRE_SLOT * TILE_TYPES * DESTINATIONS_PER_ACTION);
         assert_eq!(AzulEnv::map_action(action, &order), Some(centre_move));
         assert_eq!(encoded.double_value(&[CENTRE_SLOT as i64]), 0.0);
+    }
+
+    #[test]
+    fn two_player_interface_dimensions_are_consistent() {
+        let environment = AzulEnv::new(1, 100);
+
+        assert_eq!(FACTORY_BOWLS, 5);
+        assert_eq!(BOWL_SLOTS, 6);
+        assert_eq!(ACTION_SPACE_SIZE, 180);
+        assert_eq!(OBSERVATION_SIZE, 387);
+        assert_eq!(environment.action_mask().numel(), ACTION_SPACE_SIZE);
+        assert_eq!(
+            encode_gamestate(environment.get_gamestate()).numel(),
+            OBSERVATION_SIZE
+        );
     }
 }
