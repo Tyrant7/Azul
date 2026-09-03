@@ -26,6 +26,7 @@ pub struct PpoMetrics {
     pub approx_kl: f32,
     pub clip_fraction: f32,
     pub entropy: f32,
+    pub normalized_entropy: f32,
     pub return_mean: f32,
     pub return_std: f32,
     pub return_min: f32,
@@ -54,6 +55,7 @@ pub(crate) struct OptimizationMetrics {
     pub(crate) approx_kl: f32,
     pub(crate) clip_fraction: f32,
     pub(crate) entropy: f32,
+    pub(crate) normalized_entropy: f32,
     pub(crate) actor_update_norm: f32,
     pub(crate) critic_update_norm: f32,
 }
@@ -101,6 +103,7 @@ impl PpoMetrics {
             approx_kl: optimization.approx_kl,
             clip_fraction: optimization.clip_fraction,
             entropy: optimization.entropy,
+            normalized_entropy: optimization.normalized_entropy,
             return_mean: diagnostics.return_stats[0],
             return_std: diagnostics.return_stats[1],
             return_min: diagnostics.return_stats[2],

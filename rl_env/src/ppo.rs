@@ -409,9 +409,18 @@ impl PpoTrainer {
                     .mean(Kind::Float)
                     .double_value(&[]) as f32;
                 let finite_log_probs = log_probs.masked_fill(&data.candidate_mask.eq(0.0), 0.0);
-                optimization.entropy = (-(&log_probs.exp() * &finite_log_probs)
-                    .sum_dim_intlist([-1].as_ref(), false, Kind::Float)
-                    .mean(Kind::Float))
+                let entropy_per_state = -(&log_probs.exp() * &finite_log_probs).sum_dim_intlist(
+                    [-1].as_ref(),
+                    false,
+                    Kind::Float,
+                );
+                optimization.entropy = entropy_per_state.mean(Kind::Float).double_value(&[]) as f32;
+                let legal_action_count =
+                    data.candidate_mask
+                        .sum_dim_intlist([-1].as_ref(), false, Kind::Float);
+                optimization.normalized_entropy = (entropy_per_state
+                    / legal_action_count.clamp_min(2.0).log())
+                .mean(Kind::Float)
                 .double_value(&[]) as f32;
 
                 self.actor_optimizer.zero_grad();

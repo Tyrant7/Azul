@@ -54,6 +54,11 @@ impl TrainingLogger {
             .add_scalar("policy/clip_fraction", metrics.clip_fraction, step);
         self.writer
             .add_scalar("policy/entropy", metrics.entropy, step);
+        self.writer.add_scalar(
+            "policy/normalized_entropy",
+            metrics.normalized_entropy,
+            step,
+        );
 
         for (name, value) in [
             ("return_mean", metrics.return_mean),
@@ -126,12 +131,13 @@ impl TrainingLogger {
         self.writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} entropy={:.3} actor_grad={:.3} critic_grad={:.3} actor_update={:.5} critic_update={:.5} return={:.2}+-{:.2} value={:.2}+-{:.2} advantage={:.2}+-{:.2} explained_variance={:.3} score_diff={:.2} win_rate={:.3}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} entropy={:.3} normalized_entropy={:.3} actor_grad={:.3} critic_grad={:.3} actor_update={:.5} critic_update={:.5} return={:.2}+-{:.2} value={:.2}+-{:.2} advantage={:.2}+-{:.2} explained_variance={:.3} score_diff={:.2} win_rate={:.3}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
             metrics.critic_loss,
             metrics.entropy,
+            metrics.normalized_entropy,
             metrics.actor_grad_norm,
             metrics.critic_grad_norm,
             metrics.actor_update_norm,
