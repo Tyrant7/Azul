@@ -8,10 +8,12 @@ use tch::Tensor;
 
 mod metrics;
 mod net;
+mod policy;
 pub mod ppo;
 
 pub use metrics::PpoMetrics;
-pub use ppo::{ActorPolicy, PpoConfig, PpoTrainer};
+pub use policy::ActorPolicy;
+pub use ppo::{PpoConfig, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const PLAYER_COUNT: usize = 2;
@@ -121,7 +123,7 @@ fn bowl_tile_counts(bowl: &Bowl) -> [u8; TILE_TYPES] {
 }
 
 /// Encodes a game state from the active player's perspective.
-fn encode_gamestate(gamestate: &GameState) -> Tensor {
+pub fn encode_state(gamestate: &GameState) -> Tensor {
     let player_count = gamestate.get_boards().len();
     let active_player = gamestate.get_active_player();
     let board_order: Vec<usize> = (0..player_count)
@@ -168,6 +170,20 @@ fn encode_gamestate(gamestate: &GameState) -> Tensor {
         0,
     )
     .to_device(get_device())
+}
+
+/// Returns legal moves with the same dynamic features used during training.
+pub fn legal_move_features(gamestate: &GameState) -> Vec<(Move, [f32; ACTION_FEATURE_SIZE])> {
+    let factory_order = FactoryOrder::new(gamestate.get_factory_bowls());
+    gamestate
+        .get_valid_moves()
+        .into_iter()
+        .filter_map(|choice| {
+            let action = AzulEnv::action_for_move(&choice, &factory_order)?;
+            let features = action_features_for_gamestate(gamestate, action, &factory_order)?;
+            Some((choice, features))
+        })
+        .collect()
 }
 
 /// Encodes the centre in slot zero and canonical factories in later slots.
@@ -384,7 +400,7 @@ impl AzulEnv {
         self.steps = 0;
         self.max_steps = max_steps;
         self.gamestate.setup_next_round();
-        encode_gamestate(&self.gamestate)
+        encode_state(&self.gamestate)
     }
 
     /// Resets the environment with a random seed and starts a playable round.
@@ -394,7 +410,7 @@ impl AzulEnv {
         self.steps = 0;
         self.max_steps = max_steps;
         self.gamestate.setup_next_round();
-        encode_gamestate(&self.gamestate)
+        encode_state(&self.gamestate)
     }
 
     /// Returns a fixed-size mask containing one for every currently legal action.
@@ -429,87 +445,81 @@ impl AzulEnv {
 
     /// Returns each legal action with static and pre-action dynamic features.
     pub fn legal_action_features(&self) -> Vec<(usize, [f32; ACTION_FEATURE_SIZE])> {
-        let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
-        self.legal_actions()
+        legal_move_features(&self.gamestate)
             .into_iter()
-            .filter_map(|action| Some((action, self.action_features_for(action, &factory_order)?)))
+            .filter_map(|(choice, features)| {
+                let order = FactoryOrder::new(self.gamestate.get_factory_bowls());
+                Some((Self::action_for_move(&choice, &order)?, features))
+            })
             .collect()
     }
+}
 
-    /// Builds the complete feature vector for one legal action in this state.
-    fn action_features_for(
-        &self,
-        action: usize,
-        factory_order: &FactoryOrder,
-    ) -> Option<[f32; ACTION_FEATURE_SIZE]> {
-        let choice = Self::map_action(action, factory_order)?;
-        let mut features = encode_action_features(action)?;
-        let active_board = self
-            .gamestate
-            .get_boards()
-            .get(self.gamestate.get_active_player())?;
-        let (source, source_capacity, is_centre) = match choice.bowl {
-            BowlChoice::Centre => (
-                self.gamestate.get_centre_bowl(),
-                TOTAL_TILE_COUNT as f32,
-                true,
-            ),
-            BowlChoice::Factory(index) => (
-                self.gamestate.get_factory_bowls().get(index)?,
-                FACTORY_BOWL_CAPACITY,
-                false,
-            ),
-        };
-        let selected_tile_count = source
-            .get_tiles()
-            .iter()
-            .filter(|&&tile_type| tile_type == choice.tile_type)
-            .count();
-        let remaining_source_tile_count = source.get_tiles().len() - selected_tile_count;
+fn action_features_for_gamestate(
+    gamestate: &GameState,
+    action: usize,
+    factory_order: &FactoryOrder,
+) -> Option<[f32; ACTION_FEATURE_SIZE]> {
+    let choice = AzulEnv::map_action(action, factory_order)?;
+    let mut features = encode_action_features(action)?;
+    let active_board = gamestate.get_boards().get(gamestate.get_active_player())?;
+    let (source, source_capacity, is_centre) = match choice.bowl {
+        BowlChoice::Centre => (gamestate.get_centre_bowl(), TOTAL_TILE_COUNT as f32, true),
+        BowlChoice::Factory(index) => (
+            gamestate.get_factory_bowls().get(index)?,
+            FACTORY_BOWL_CAPACITY,
+            false,
+        ),
+    };
+    let selected_tile_count = source
+        .get_tiles()
+        .iter()
+        .filter(|&&tile_type| tile_type == choice.tile_type)
+        .count();
+    let remaining_source_tile_count = source.get_tiles().len() - selected_tile_count;
 
-        let (destination_fullness, destination_remaining, overflow, completes_line) =
-            match choice.row {
-                Row::Floor => (0.0, 0.0, selected_tile_count, 0.0),
-                Row::Wall(row_index) => {
-                    let row = active_board.get_holds().get(row_index)?;
-                    let capacity = row_index + 1;
-                    let occupied = row.iter().filter(|tile| tile.is_some()).count();
-                    let available = capacity.saturating_sub(occupied);
-                    (
-                        occupied as f32 / capacity as f32,
-                        available as f32 / capacity as f32,
-                        selected_tile_count.saturating_sub(available),
-                        if selected_tile_count >= available {
-                            1.0
-                        } else {
-                            0.0
-                        },
-                    )
-                }
-            };
+    let (destination_fullness, destination_remaining, overflow, completes_line) = match choice.row {
+        Row::Floor => (0.0, 0.0, selected_tile_count, 0.0),
+        Row::Wall(row_index) => {
+            let row = active_board.get_holds().get(row_index)?;
+            let capacity = row_index + 1;
+            let occupied = row.iter().filter(|tile| tile.is_some()).count();
+            let available = capacity.saturating_sub(occupied);
+            (
+                occupied as f32 / capacity as f32,
+                available as f32 / capacity as f32,
+                selected_tile_count.saturating_sub(available),
+                if selected_tile_count >= available {
+                    1.0
+                } else {
+                    0.0
+                },
+            )
+        }
+    };
 
-        let token_penalty = if is_centre && self.gamestate.get_first_token_owner().is_none() {
-            1
-        } else {
-            0
-        };
-        let added_penalties = overflow + token_penalty;
-        let expected_penalty_points =
-            penalty_points(active_board.get_penalties() + added_penalties)
-                - penalty_points(active_board.get_penalties());
+    let token_penalty = if is_centre && gamestate.get_first_token_owner().is_none() {
+        1
+    } else {
+        0
+    };
+    let added_penalties = overflow + token_penalty;
+    let expected_penalty_points = penalty_points(active_board.get_penalties() + added_penalties)
+        - penalty_points(active_board.get_penalties());
 
-        let dynamic_offset = ACTION_SPEC_FEATURES;
-        features[dynamic_offset] = remaining_source_tile_count as f32 / source_capacity;
-        features[dynamic_offset + 1] = selected_tile_count as f32 / MAX_TILE_TYPE_COUNT;
-        features[dynamic_offset + 2] = if is_centre { 1.0 } else { 0.0 };
-        features[dynamic_offset + 3] = destination_fullness;
-        features[dynamic_offset + 4] = destination_remaining;
-        features[dynamic_offset + 5] = (overflow as f32 / MAX_PENALTY_TILES).min(1.0);
-        features[dynamic_offset + 6] = expected_penalty_points as f32 / MAX_PENALTY_SCORE;
-        features[dynamic_offset + 7] = completes_line;
-        Some(features)
-    }
+    let dynamic_offset = ACTION_SPEC_FEATURES;
+    features[dynamic_offset] = remaining_source_tile_count as f32 / source_capacity;
+    features[dynamic_offset + 1] = selected_tile_count as f32 / MAX_TILE_TYPE_COUNT;
+    features[dynamic_offset + 2] = if is_centre { 1.0 } else { 0.0 };
+    features[dynamic_offset + 3] = destination_fullness;
+    features[dynamic_offset + 4] = destination_remaining;
+    features[dynamic_offset + 5] = (overflow as f32 / MAX_PENALTY_TILES).min(1.0);
+    features[dynamic_offset + 6] = expected_penalty_points as f32 / MAX_PENALTY_SCORE;
+    features[dynamic_offset + 7] = completes_line;
+    Some(features)
+}
 
+impl AzulEnv {
     /// Applies an action, rejecting out-of-range and illegal moves without panicking.
     pub fn step(&mut self, action: usize) -> Result<StepResult, IllegalMoveError> {
         if self.gamestate.is_game_over() || self.steps >= self.max_steps {
@@ -581,7 +591,7 @@ impl AzulEnv {
         let truncated = !terminated && self.steps >= self.max_steps;
 
         Ok(StepResult {
-            next_state: encode_gamestate(&self.gamestate),
+            next_state: encode_state(&self.gamestate),
             reward: calculate_reward(&score_deltas, acting_player),
             terminated,
             truncated,
@@ -712,14 +722,12 @@ mod tests {
             steps: 0,
         };
 
-        assert!(
-            encode_gamestate(first_environment.get_gamestate()).allclose(
-                &encode_gamestate(second_environment.get_gamestate()),
-                1e-6,
-                1e-6,
-                false,
-            )
-        );
+        assert!(encode_state(first_environment.get_gamestate()).allclose(
+            &encode_state(second_environment.get_gamestate()),
+            1e-6,
+            1e-6,
+            false,
+        ));
         assert!(first_environment.action_mask().allclose(
             &second_environment.action_mask(),
             1e-6,
@@ -784,7 +792,7 @@ mod tests {
         assert_eq!(OBSERVATION_SIZE, 386);
         assert_eq!(environment.action_mask().numel(), ACTION_SPACE_SIZE);
         assert_eq!(
-            encode_gamestate(environment.get_gamestate()).numel(),
+            encode_state(environment.get_gamestate()).numel(),
             OBSERVATION_SIZE
         );
     }
@@ -833,9 +841,9 @@ mod tests {
         };
         let action = AzulEnv::action_for_move(&choice, &factory_order)
             .expect("test move should have a valid action index");
-        let features = environment
-            .action_features_for(action, &factory_order)
-            .expect("test move should be legal");
+        let features =
+            action_features_for_gamestate(&environment.gamestate, action, &factory_order)
+                .expect("test move should be legal");
         let dynamic_offset = ACTION_SPEC_FEATURES;
 
         assert_eq!(features[dynamic_offset], 1.0 / FACTORY_BOWL_CAPACITY);
