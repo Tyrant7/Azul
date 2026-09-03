@@ -295,16 +295,16 @@ pub struct StepResult {
 /// Aggregate board statistics produced when a round is resolved.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RoundDiagnostics {
-    /// Total scoring-space penalty tiles across all players this round.
-    pub penalties: usize,
-    /// Total points from newly collected bonuses this round.
-    pub bonus_points: usize,
-    /// Number of newly completed wall rows across all players.
-    pub rows_filled: usize,
-    /// Number of newly completed wall columns across all players.
-    pub columns_filled: usize,
-    /// Number of newly collected five-of-a-kind bonuses across all players.
-    pub tile_bonuses: usize,
+    /// Scoring-space penalty tiles for each player this round.
+    pub penalties: [usize; PLAYER_COUNT],
+    /// Bonus points earned by each player this round.
+    pub bonus_points: [usize; PLAYER_COUNT],
+    /// Newly completed wall rows for each player.
+    pub rows_filled: [usize; PLAYER_COUNT],
+    /// Newly completed wall columns for each player.
+    pub columns_filled: [usize; PLAYER_COUNT],
+    /// Newly collected five-of-a-kind bonuses for each player.
+    pub tile_bonuses: [usize; PLAYER_COUNT],
 }
 
 #[derive(Clone, Copy)]
@@ -334,27 +334,26 @@ fn board_round_stats(board: &Board) -> BoardRoundStats {
 fn round_diagnostics(
     before: &[BoardRoundStats],
     after: &[BoardRoundStats],
-    penalties: usize,
+    penalties: &[usize],
 ) -> RoundDiagnostics {
-    let mut diagnostics = RoundDiagnostics {
-        penalties,
-        ..RoundDiagnostics::default()
-    };
-    for (before, after) in before.iter().zip(after) {
-        diagnostics.rows_filled += after.rows_filled.saturating_sub(before.rows_filled);
-        diagnostics.columns_filled += after.columns_filled.saturating_sub(before.columns_filled);
+    let mut diagnostics = RoundDiagnostics::default();
+    for (player, (before, after)) in before.iter().zip(after).enumerate() {
+        diagnostics.penalties[player] = penalties.get(player).copied().unwrap_or_default();
+        diagnostics.rows_filled[player] = after.rows_filled.saturating_sub(before.rows_filled);
+        diagnostics.columns_filled[player] =
+            after.columns_filled.saturating_sub(before.columns_filled);
         for (index, (was_collected, is_collected)) in
             before.bonuses.iter().zip(after.bonuses).enumerate()
         {
             if !was_collected && is_collected {
-                diagnostics.bonus_points += match index / TILE_TYPES {
+                diagnostics.bonus_points[player] += match index / TILE_TYPES {
                     0 => 2,
                     1 => 7,
                     _ => 10,
                 };
             }
         }
-        diagnostics.tile_bonuses += after.bonuses[2 * TILE_TYPES..]
+        diagnostics.tile_bonuses[player] += after.bonuses[2 * TILE_TYPES..]
             .iter()
             .zip(&before.bonuses[2 * TILE_TYPES..])
             .filter(|(was_collected, is_collected)| !**was_collected && **is_collected)
@@ -536,13 +535,13 @@ impl AzulEnv {
 
         let round_over = self.gamestate.round_over();
         let round_penalties = if round_over {
-            self.gamestate
-                .get_boards()
-                .iter()
-                .map(|board| board.get_penalties())
-                .sum()
+            let mut penalties = [0; PLAYER_COUNT];
+            for (player, board) in self.gamestate.get_boards().iter().enumerate() {
+                penalties[player] = board.get_penalties();
+            }
+            penalties
         } else {
-            0
+            [0; PLAYER_COUNT]
         };
         if round_over {
             self.gamestate.setup_next_round();
@@ -558,7 +557,7 @@ impl AzulEnv {
             Some(round_diagnostics(
                 &before_round_stats,
                 &after_round_stats,
-                round_penalties,
+                &round_penalties,
             ))
         } else {
             None

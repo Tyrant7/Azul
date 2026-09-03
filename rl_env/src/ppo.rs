@@ -65,16 +65,16 @@ pub struct PpoMetrics {
     pub mean_winner_score: f32,
     /// Fraction of terminal episodes won by player zero.
     pub player_zero_win_rate: f32,
-    /// Mean scoring-space penalty tiles per game across players.
-    pub average_penalties_per_game: f32,
-    /// Mean bonus points earned per game across players.
-    pub average_bonus_points_per_game: f32,
-    /// Mean wall rows completed per game across players.
-    pub average_rows_filled_per_game: f32,
-    /// Mean wall columns completed per game across players.
-    pub average_columns_filled_per_game: f32,
-    /// Mean five-of-a-kind bonuses earned per game across players.
-    pub average_tile_bonuses_per_game: f32,
+    /// Mean scoring-space penalty tiles per game for each player.
+    pub average_penalties_per_game: [f32; 2],
+    /// Mean bonus points earned per game for each player.
+    pub average_bonus_points_per_game: [f32; 2],
+    /// Mean wall rows completed per game for each player.
+    pub average_rows_filled_per_game: [f32; 2],
+    /// Mean wall columns completed per game for each player.
+    pub average_columns_filled_per_game: [f32; 2],
+    /// Mean five-of-a-kind bonuses earned per game for each player.
+    pub average_tile_bonuses_per_game: [f32; 2],
     /// Actor surrogate loss from the final update epoch.
     pub actor_loss: f32,
     /// Critic mean-squared error from the final update epoch.
@@ -124,11 +124,11 @@ struct EpisodeStats {
     winner_score: f32,
     terminated: bool,
     player_zero_won: bool,
-    penalties: usize,
-    bonus_points: usize,
-    rows_filled: usize,
-    columns_filled: usize,
-    tile_bonuses: usize,
+    penalties: [usize; 2],
+    bonus_points: [usize; 2],
+    rows_filled: [usize; 2],
+    columns_filled: [usize; 2],
+    tile_bonuses: [usize; 2],
 }
 
 impl RolloutBatch {
@@ -308,6 +308,27 @@ where
     episodes.iter().map(metric).sum::<f32>() / episodes.len() as f32
 }
 
+fn mean_episode_array<F>(episodes: &[EpisodeStats], metric: F) -> [f32; 2]
+where
+    F: Fn(&EpisodeStats) -> [usize; 2],
+{
+    if episodes.is_empty() {
+        return [0.0; 2];
+    }
+    let totals = episodes
+        .iter()
+        .map(metric)
+        .fold([0.0; 2], |mut totals, values| {
+            totals[0] += values[0] as f32;
+            totals[1] += values[1] as f32;
+            totals
+        });
+    [
+        totals[0] / episodes.len() as f32,
+        totals[1] / episodes.len() as f32,
+    ]
+}
+
 /// Computes player zero's win rate across terminal, non-truncated episodes.
 fn terminal_win_rate(episodes: &[EpisodeStats]) -> f32 {
     let terminal_episodes = episodes.iter().filter(|episode| episode.terminated);
@@ -461,20 +482,20 @@ impl PpoTrainer {
                     episode.winner_score
                 }),
                 player_zero_win_rate: terminal_win_rate(&episode_stats),
-                average_penalties_per_game: mean_episode_metric(&episode_stats, |episode| {
-                    episode.penalties as f32
+                average_penalties_per_game: mean_episode_array(&episode_stats, |episode| {
+                    episode.penalties
                 }),
-                average_bonus_points_per_game: mean_episode_metric(&episode_stats, |episode| {
-                    episode.bonus_points as f32
+                average_bonus_points_per_game: mean_episode_array(&episode_stats, |episode| {
+                    episode.bonus_points
                 }),
-                average_rows_filled_per_game: mean_episode_metric(&episode_stats, |episode| {
-                    episode.rows_filled as f32
+                average_rows_filled_per_game: mean_episode_array(&episode_stats, |episode| {
+                    episode.rows_filled
                 }),
-                average_columns_filled_per_game: mean_episode_metric(&episode_stats, |episode| {
-                    episode.columns_filled as f32
+                average_columns_filled_per_game: mean_episode_array(&episode_stats, |episode| {
+                    episode.columns_filled
                 }),
-                average_tile_bonuses_per_game: mean_episode_metric(&episode_stats, |episode| {
-                    episode.tile_bonuses as f32
+                average_tile_bonuses_per_game: mean_episode_array(&episode_stats, |episode| {
+                    episode.tile_bonuses
                 }),
                 actor_loss: actor_loss as f32,
                 critic_loss: critic_loss as f32,
@@ -495,11 +516,11 @@ impl PpoTrainer {
             // Rollouts are episode-complete; do not impose a mid-game action cap.
             let mut state = env.reset(usize::MAX);
             let mut episode_return = 0.0;
-            let mut penalties = 0;
-            let mut bonus_points = 0;
-            let mut rows_filled = 0;
-            let mut columns_filled = 0;
-            let mut tile_bonuses = 0;
+            let mut penalties = [0; 2];
+            let mut bonus_points = [0; 2];
+            let mut rows_filled = [0; 2];
+            let mut columns_filled = [0; 2];
+            let mut tile_bonuses = [0; 2];
             let mut episode_length = 0;
             loop {
                 let legal_candidates = env.legal_action_features();
@@ -530,11 +551,13 @@ impl PpoTrainer {
                 };
                 episode_return += result.reward;
                 if let Some(diagnostics) = result.round_diagnostics {
-                    penalties += diagnostics.penalties;
-                    bonus_points += diagnostics.bonus_points;
-                    rows_filled += diagnostics.rows_filled;
-                    columns_filled += diagnostics.columns_filled;
-                    tile_bonuses += diagnostics.tile_bonuses;
+                    for player in 0..2 {
+                        penalties[player] += diagnostics.penalties[player];
+                        bonus_points[player] += diagnostics.bonus_points[player];
+                        rows_filled[player] += diagnostics.rows_filled[player];
+                        columns_filled[player] += diagnostics.columns_filled[player];
+                        tile_bonuses[player] += diagnostics.tile_bonuses[player];
+                    }
                 }
                 episode_length += 1;
 

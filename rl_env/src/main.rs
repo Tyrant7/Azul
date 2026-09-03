@@ -80,34 +80,59 @@ fn main() -> Result<(), tch::TchError> {
             metrics.timesteps,
         );
         writer.add_scalar(
-            "game/average_penalties",
-            metrics.average_penalties_per_game,
+            "game/player_zero_average_penalties",
+            metrics.average_penalties_per_game[0],
             metrics.timesteps,
         );
         writer.add_scalar(
-            "game/average_bonus_points",
-            metrics.average_bonus_points_per_game,
+            "game/player_one_average_penalties",
+            metrics.average_penalties_per_game[1],
             metrics.timesteps,
         );
         writer.add_scalar(
-            "game/average_rows_filled",
-            metrics.average_rows_filled_per_game,
+            "game/player_zero_average_bonus_points",
+            metrics.average_bonus_points_per_game[0],
             metrics.timesteps,
         );
         writer.add_scalar(
-            "game/average_columns_filled",
-            metrics.average_columns_filled_per_game,
+            "game/player_one_average_bonus_points",
+            metrics.average_bonus_points_per_game[1],
             metrics.timesteps,
         );
         writer.add_scalar(
-            "game/average_tile_bonuses",
-            metrics.average_tile_bonuses_per_game,
+            "game/player_zero_average_rows_filled",
+            metrics.average_rows_filled_per_game[0],
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/player_one_average_rows_filled",
+            metrics.average_rows_filled_per_game[1],
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/player_zero_average_columns_filled",
+            metrics.average_columns_filled_per_game[0],
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/player_one_average_columns_filled",
+            metrics.average_columns_filled_per_game[1],
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/player_zero_average_tile_bonuses",
+            metrics.average_tile_bonuses_per_game[0],
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/player_one_average_tile_bonuses",
+            metrics.average_tile_bonuses_per_game[1],
             metrics.timesteps,
         );
         writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} actor_grad={:.3} critic_grad={:.3} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3} penalties/game={:.2} bonuses/game={:.2} rows/game={:.2} columns/game={:.2} tile_bonuses/game={:.2}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} actor_grad={:.3} critic_grad={:.3} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3} p0_penalties/game={:.2} p1_penalties/game={:.2} p0_bonuses/game={:.2} p1_bonuses/game={:.2} p0_rows/game={:.2} p1_rows/game={:.2} p0_columns/game={:.2} p1_columns/game={:.2} p0_tile_bonuses/game={:.2} p1_tile_bonuses/game={:.2}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
@@ -119,11 +144,16 @@ fn main() -> Result<(), tch::TchError> {
             metrics.mean_final_score_difference,
             metrics.mean_winner_score,
             metrics.player_zero_win_rate,
-            metrics.average_penalties_per_game,
-            metrics.average_bonus_points_per_game,
-            metrics.average_rows_filled_per_game,
-            metrics.average_columns_filled_per_game,
-            metrics.average_tile_bonuses_per_game,
+            metrics.average_penalties_per_game[0],
+            metrics.average_penalties_per_game[1],
+            metrics.average_bonus_points_per_game[0],
+            metrics.average_bonus_points_per_game[1],
+            metrics.average_rows_filled_per_game[0],
+            metrics.average_rows_filled_per_game[1],
+            metrics.average_columns_filled_per_game[0],
+            metrics.average_columns_filled_per_game[1],
+            metrics.average_tile_bonuses_per_game[0],
+            metrics.average_tile_bonuses_per_game[1],
         );
     });
     Ok(())
