@@ -35,19 +35,19 @@ shell, and keep each field's value free of spaces.
 ## Engine descriptors
 
 `--engine` accepts two or more descriptors. `path` and `tc` are required for
-each descriptor; the other fields are optional.
+UAI descriptors; human descriptors may omit process configuration.
 
 | Field | Value | Default | Description |
 | --- | --- | --- | --- |
-| `path` | executable path | none | Program to start for this engine. |
+| `path` | executable path | none | Program to start for a UAI engine. Not needed for human players. |
 | `proto` | `uai` or `human` | `uai` | Protocol/interaction mode. |
-| `tc` | `SECONDS` or `SECONDS+INCREMENT` | none | Incremental time control in seconds. It cannot be combined with `st`. |
+| `tc` | `SECONDS` or `SECONDS+INCREMENT` | none | Incremental time control in seconds for UAI engines. It cannot be combined with `st`. |
 | `st` | integer | none | Fixed time-per-move value, interpreted as milliseconds. It cannot be combined with `tc`. |
 | `dir` | path | none | Working directory for the engine process. |
 | `args` | one whitespace-free string | none | Additional argument text passed to the engine. |
 | `name` | text | none | Display name for the engine. |
 | `limit_mem` | positive integer MiB | none | Hard per-engine memory cap. Windows uses a Job Object; Linux uses `RLIMIT_AS`. |
-| `limit_threads` | positive integer | `1` | Hard live-thread cap monitored by the interface on Windows/Linux. |
+| `limit_threads` | positive integer | none | Optional hard live-thread cap monitored by the interface on Windows/Linux. |
 
 Example:
 

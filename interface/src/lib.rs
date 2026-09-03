@@ -24,6 +24,7 @@ pub fn run() {
     let launches = cli
         .engines
         .iter()
+        .filter(|e| matches!(e.proto, protocol::Protocol::UAI))
         .map(|e| {
             let args: Vec<String> = e
                 .args
@@ -54,8 +55,11 @@ pub fn run() {
     }
 
     let startup_timeout = Duration::from_secs(cli.timeout as u64);
-    for (player, (engine, config)) in engines.iter_mut().zip(&cli.engines).enumerate() {
+    let mut uai_index = 0;
+    for config in &cli.engines {
         if matches!(config.proto, protocol::Protocol::UAI) {
+            let player = uai_index;
+            let engine = &mut engines[player];
             let mut restarts = 0;
             loop {
                 let startup =
@@ -94,6 +98,7 @@ pub fn run() {
                     }
                 }
             }
+            uai_index += 1;
         }
     }
 
@@ -146,6 +151,62 @@ pub fn run() {
                 println!("Game over by forfeit");
             }
             Err(error) => eprintln!("UAI game failed: {error}"),
+        }
+    } else if cli.engines.len() == 2
+        && cli
+            .engines
+            .iter()
+            .filter(|config| matches!(config.proto, protocol::Protocol::Human))
+            .count()
+            == 1
+    {
+        let human_player = cli
+            .engines
+            .iter()
+            .position(|config| matches!(config.proto, protocol::Protocol::Human))
+            .expect("mixed game must have a human player");
+        let engine_config = cli
+            .engines
+            .iter()
+            .find(|config| matches!(config.proto, protocol::Protocol::UAI))
+            .expect("mixed game must have a UAI engine");
+        let seed = cli.seed.unwrap_or_else(|| rand::rng().random());
+        let mut gamestate = GameState::new(2, seed).expect("two-player game state must be valid");
+        gamestate.setup_next_round();
+        match protocol::play_human_uai_game(
+            engines
+                .first_mut()
+                .expect("mixed game must have one UAI engine"),
+            launches
+                .first()
+                .expect("mixed game must have one UAI launch"),
+            gamestate,
+            human_player,
+            engine_config
+                .tc
+                .clone()
+                .expect("engine time control must be configured"),
+            cli.recover,
+            startup_timeout,
+        ) {
+            Ok(protocol::GameResult::Completed(gamestate)) => {
+                if !cli.quiet {
+                    println!("{}", gamestate.fmt_protocol(protocol::Protocol::Human));
+                }
+                println!("Game over");
+                println!("Winner: player {}", gamestate.get_winner());
+            }
+            Ok(protocol::GameResult::Forfeit { game, failure }) => {
+                if !cli.quiet {
+                    println!("{}", game.fmt_protocol(protocol::Protocol::Human));
+                }
+                eprintln!(
+                    "Player {} forfeited ({:?}): {}",
+                    failure.player, failure.reason, failure.message
+                );
+                println!("Game over by forfeit");
+            }
+            Err(error) => eprintln!("Mixed game failed: {error}"),
         }
     } else {
         let seed = cli.seed.unwrap_or_else(|| rand::rng().random());

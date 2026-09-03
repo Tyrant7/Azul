@@ -1,5 +1,7 @@
 //! Minimal on-policy PPO training for the discrete Azul environment.
 
+use std::path::Path;
+
 use rand::RngExt;
 use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
@@ -495,6 +497,16 @@ impl PpoTrainer {
         self.opponent_pool.historical.len()
     }
 
+    /// Saves the current actor and critic weights to separate checkpoints.
+    pub fn save_checkpoints<A, C>(&self, actor_path: A, critic_path: C) -> Result<(), tch::TchError>
+    where
+        A: AsRef<Path>,
+        C: AsRef<Path>,
+    {
+        self.actor_vs.save(actor_path)?;
+        self.critic_vs.save(critic_path)
+    }
+
     /// Collects one fresh rollout batch and applies PPO updates to it.
     pub fn train(&mut self, env: &mut AzulEnv, total_timesteps: usize) {
         self.train_with_callback(env, total_timesteps, |_| {});
@@ -872,7 +884,8 @@ mod tests {
     use super::{
         AzulEnv, HistoricalPolicy, OpponentKind, OpponentPool, PpoConfig, PpoTrainer, compute_gae,
     };
-    use crate::{get_device, net::initialize_actor};
+    use crate::{ActorPolicy, get_device, net::initialize_actor};
+    use std::path::PathBuf;
     use tch::{Kind, Tensor, nn};
 
     #[test]
@@ -1004,5 +1017,22 @@ mod tests {
             .add_historical_opponent()
             .expect("historical copy should initialize");
         assert_eq!(trainer.historical_opponent_count(), 1);
+    }
+
+    #[test]
+    fn trainer_checkpoints_can_be_loaded_for_inference() {
+        let mut actor_path = PathBuf::from(std::env::temp_dir());
+        actor_path.push(format!("azul-actor-{}.ot", std::process::id()));
+        let mut critic_path = PathBuf::from(std::env::temp_dir());
+        critic_path.push(format!("azul-critic-{}.ot", std::process::id()));
+
+        let trainer = PpoTrainer::new(PpoConfig::default()).expect("trainer should initialize");
+        trainer
+            .save_checkpoints(&actor_path, &critic_path)
+            .expect("checkpoints should save");
+        ActorPolicy::load(&actor_path).expect("actor checkpoint should load");
+
+        std::fs::remove_file(actor_path).expect("actor checkpoint should be removable");
+        std::fs::remove_file(critic_path).expect("critic checkpoint should be removable");
     }
 }

@@ -1,8 +1,32 @@
 //! Protocol and human-readable formatting for movegen values.
 
-use azul_movegen::{Bag, Board, Bowl, GameState, board::BOARD_DIMENSION};
+use azul_movegen::{Bag, Board, Bowl, GameState, Tile, board::BOARD_DIMENSION};
 
 use crate::{parsing::ToAzulFEN, protocol::Protocol};
+
+fn color_tile(tile: Tile) -> String {
+    let color = match tile {
+        0 => 31,
+        1 => 33,
+        2 => 32,
+        3 => 34,
+        4 => 35,
+        _ => 37,
+    };
+    format!("\x1b[{color}m{tile}\x1b[0m")
+}
+
+fn color_board_space(tile_type: Tile) -> String {
+    let color = match tile_type {
+        0 => 31,
+        1 => 33,
+        2 => 32,
+        3 => 34,
+        4 => 35,
+        _ => 37,
+    };
+    format!("\x1b[{color}m. \x1b[0m")
+}
 
 /// Formats movegen values for human output or the machine-readable protocol.
 pub trait ProtocolFormat {
@@ -67,7 +91,7 @@ impl ProtocolFormat for Board {
             output.push_str(&"  ".repeat(BOARD_DIMENSION - h_idx));
             for h in 0..h_idx + 1 {
                 if let Some(h) = hold.get(h).and_then(|x| *x) {
-                    output.push_str(&h.to_string());
+                    output.push_str(&color_tile(h));
                     output.push(' ');
                 } else {
                     output.push_str(". ");
@@ -76,10 +100,12 @@ impl ProtocolFormat for Board {
             output.push_str(" | ");
             for p in 0..BOARD_DIMENSION {
                 if let Some(p) = row.get(p).and_then(|x| *x) {
-                    output.push_str(&p.to_string());
+                    output.push_str(&color_tile(p));
                     output.push(' ');
                 } else {
-                    output.push_str(". ");
+                    output.push_str(&color_board_space(
+                        azul_movegen::Board::get_tile_type_at_pos(h_idx, p),
+                    ));
                 }
             }
             output.push('\n');
@@ -163,11 +189,14 @@ impl ProtocolFormat for Bowl {
         if self.get_tiles().is_empty() {
             return String::from("-");
         }
-        self.get_tiles().iter().map(|t| t.to_string()).collect()
+        self.get_tiles().iter().map(|&t| color_tile(t)).collect()
     }
 
     fn fmt_uci_like(&self) -> String {
-        self.fmt_human()
+        if self.get_tiles().is_empty() {
+            return String::from("-");
+        }
+        self.get_tiles().iter().map(|t| t.to_string()).collect()
     }
 }
 
@@ -194,9 +223,15 @@ mod tests {
     #[test]
     fn bowl_and_bag_formatters_use_expected_machine_values() {
         let bowl = Bowl::from_tiles(vec![2, 0, 2]);
-        assert_eq!(bowl.fmt_human(), "022");
+        assert_eq!(
+            bowl.fmt_human(),
+            "\x1b[31m0\x1b[0m\x1b[32m2\x1b[0m\x1b[32m2\x1b[0m"
+        );
         assert_eq!(bowl.fmt_uci_like(), "022");
-        assert_eq!(bowl.fmt_protocol(Protocol::Human), "022");
+        assert_eq!(
+            bowl.fmt_protocol(Protocol::Human),
+            "\x1b[31m0\x1b[0m\x1b[32m2\x1b[0m\x1b[32m2\x1b[0m"
+        );
         assert_eq!(bowl.fmt_protocol(Protocol::UAI), "022");
 
         let bag = Bag::from_items(vec![1, 2, 3]);

@@ -1,5 +1,6 @@
 //! Command-line configuration, protocol modes, and move parsing.
 
+use crate::ProtocolFormat;
 use crate::parsing::ToAzulFEN;
 use crate::process::{EngineLaunch, EngineProcess};
 use azul_movegen::{BowlChoice, GameState, Row, Tile, game_move::Move};
@@ -27,8 +28,8 @@ pub struct EngineConfig {
     pub name: Option<String>,
     /// Optional per-engine memory limit in mebibytes.
     pub limit_mem: Option<u64>,
-    /// Per-engine thread limit, defaulting to one.
-    pub limit_threads: u32,
+    /// Optional per-engine thread limit.
+    pub limit_threads: Option<u32>,
 }
 
 /// Output and interaction mode used for an engine.
@@ -408,6 +409,93 @@ pub(crate) fn play_uai_game(
     Ok(GameResult::Completed(game))
 }
 
+/// Runs a two-player game between one human and one UAI engine.
+pub(crate) fn play_human_uai_game(
+    process: &mut EngineProcess,
+    launch: &EngineLaunch,
+    mut game: GameState,
+    human_player: usize,
+    engine_time_control: TimeControl,
+    recover: bool,
+    startup_timeout: Duration,
+) -> io::Result<GameResult> {
+    if game.get_boards().len() != 2 || human_player > 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "human versus UAI play requires a two-player game",
+        ));
+    }
+
+    let engine_player = 1 - human_player;
+    let mut clock = PlayerClock::new(engine_time_control);
+    let mut restart_count = 0;
+    send_new_game(process)?;
+
+    while !game.is_game_over() {
+        if game.get_active_player() == human_player {
+            println!("{}", game.fmt_human());
+            loop {
+                print!("move> ");
+                io::Write::flush(&mut io::stdout())?;
+                let mut input = String::new();
+                if io::stdin().read_line(&mut input)? == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "standard input closed during human move",
+                    ));
+                }
+                match parse_move(input.trim()) {
+                    Ok(choice) if game.make_move(&choice).is_ok() => break,
+                    Ok(_) => eprintln!("Illegal move"),
+                    Err(_) => eprintln!("Enter a six-digit move such as 000000"),
+                }
+            }
+        } else {
+            let started = Instant::now();
+            let deadline = started + clock.move_budget();
+            let choice = loop {
+                match request_move(process, &game, &clock, deadline) {
+                    Ok(choice) => break choice,
+                    Err(failure) => {
+                        if !failure.kind.recoverable()
+                            || !recover_engine(
+                                process,
+                                launch,
+                                &game,
+                                &mut restart_count,
+                                recover,
+                                startup_timeout,
+                            )
+                        {
+                            return Ok(GameResult::Forfeit {
+                                game,
+                                failure: EngineForfeit {
+                                    player: engine_player,
+                                    reason: failure.kind,
+                                    message: failure.message,
+                                },
+                            });
+                        }
+                    }
+                }
+            };
+            clock
+                .finish_move(started.elapsed())
+                .map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error.to_string()))?;
+            game.make_move(&choice).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "engine returned an illegal move",
+                )
+            })?;
+        }
+        if game.round_over() {
+            game.setup_next_round();
+        }
+    }
+    Ok(GameResult::Completed(game))
+}
+
 /// Sends one position/search request and reads the resulting move.
 fn request_move(
     process: &mut EngineProcess,
@@ -684,7 +772,7 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
         args: None,
         name: None,
         limit_mem: None,
-        limit_threads: 1,
+        limit_threads: None,
     };
 
     for part in s.split_whitespace() {
@@ -741,16 +829,18 @@ fn parse_engine(s: &str) -> Result<EngineConfig, String> {
                 if limit == 0 {
                     return Err("Thread limit must be greater than zero".to_string());
                 }
-                config.limit_threads = limit;
+                config.limit_threads = Some(limit);
             }
             _ => return Err(format!("Unknown engine key: {}", key)),
         };
     }
 
-    if config.path.is_empty() {
-        return Err("Missing required key: path".to_string());
-    } else if config.tc.is_none() {
-        return Err("Missing required key: tc".to_string());
+    if matches!(config.proto, Protocol::UAI) {
+        if config.path.is_empty() {
+            return Err("Missing required key: path".to_string());
+        } else if config.tc.is_none() {
+            return Err("Missing required key: tc".to_string());
+        }
     }
 
     Ok(config)
@@ -900,7 +990,7 @@ mod tests {
         assert_eq!(config.args.as_deref(), Some("--seed"));
         assert_eq!(config.name.as_deref(), Some("Test"));
         assert_eq!(config.limit_mem, Some(1024));
-        assert_eq!(config.limit_threads, 4);
+        assert_eq!(config.limit_threads, Some(4));
     }
 
     #[test]
@@ -913,6 +1003,14 @@ mod tests {
 
         let fixed = parse_engine("path=engine st=500").unwrap();
         assert!(matches!(fixed.tc, Some(TimeControl::Fixed(500))));
+    }
+
+    #[test]
+    fn parse_engine_allows_human_without_process_configuration() {
+        let human = parse_engine("proto=human").unwrap();
+        assert!(matches!(human.proto, Protocol::Human));
+        assert!(human.path.is_empty());
+        assert!(human.tc.is_none());
     }
 
     #[test]
@@ -937,7 +1035,7 @@ mod tests {
         let config = parse_engine("path=engine tc=60").unwrap();
 
         assert_eq!(config.limit_mem, None);
-        assert_eq!(config.limit_threads, 1);
+        assert_eq!(config.limit_threads, None);
     }
 
     #[test]

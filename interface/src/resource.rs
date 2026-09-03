@@ -30,8 +30,8 @@ impl ProcessLimits {
     }
 
     /// Validates and converts a CLI resource-limit configuration.
-    pub(crate) fn from_config(memory_mib: Option<u64>, threads: u32) -> io::Result<Self> {
-        if memory_mib == Some(0) || threads == 0 {
+    pub(crate) fn from_config(memory_mib: Option<u64>, threads: Option<u32>) -> io::Result<Self> {
+        if memory_mib == Some(0) || threads == Some(0) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "memory and thread limits must be greater than zero",
@@ -39,7 +39,7 @@ impl ProcessLimits {
         }
         Ok(Self {
             memory_mib,
-            threads: Some(threads),
+            threads,
         })
     }
 
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn accepts_positive_memory_and_thread_limits() {
-        let limits = ProcessLimits::from_config(Some(512), 4).unwrap();
+        let limits = ProcessLimits::from_config(Some(512), Some(4)).unwrap();
 
         assert_eq!(limits.memory_mib, Some(512));
         assert_eq!(limits.threads, Some(4));
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn rejects_zero_resource_limits() {
-        assert!(ProcessLimits::from_config(Some(0), 1).is_err());
-        assert!(ProcessLimits::from_config(None, 0).is_err());
+        assert!(ProcessLimits::from_config(Some(0), Some(1)).is_err());
+        assert!(ProcessLimits::from_config(None, Some(0)).is_err());
     }
 }

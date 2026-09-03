@@ -94,7 +94,11 @@ impl EngineLaunch {
     }
 
     /// Adds validated per-process memory and thread limits to this launch.
-    pub(crate) fn with_limits(mut self, memory_mib: Option<u64>, threads: u32) -> io::Result<Self> {
+    pub(crate) fn with_limits(
+        mut self,
+        memory_mib: Option<u64>,
+        threads: Option<u32>,
+    ) -> io::Result<Self> {
         self.limits = ProcessLimits::from_config(memory_mib, threads)?;
         Ok(self)
     }
