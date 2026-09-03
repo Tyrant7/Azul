@@ -11,7 +11,7 @@ mod net;
 pub mod ppo;
 
 pub use metrics::PpoMetrics;
-pub use ppo::{PpoConfig, PpoTrainer};
+pub use ppo::{ActorPolicy, PpoConfig, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const PLAYER_COUNT: usize = 2;

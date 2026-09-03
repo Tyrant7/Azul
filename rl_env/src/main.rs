@@ -16,5 +16,7 @@ fn main() -> Result<(), tch::TchError> {
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));
+    std::fs::create_dir_all("checkpoints").expect("checkpoint directory should be creatable");
+    trainer.save_checkpoints("checkpoints/azul_actor.ot", "checkpoints/azul_critic.ot")?;
     Ok(())
 }
