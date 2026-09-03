@@ -408,7 +408,8 @@ impl PpoTrainer {
                     .to_kind(Kind::Float)
                     .mean(Kind::Float)
                     .double_value(&[]) as f32;
-                optimization.entropy = (-(&log_probs.exp() * &log_probs)
+                let finite_log_probs = log_probs.masked_fill(&data.candidate_mask.eq(0.0), 0.0);
+                optimization.entropy = (-(&log_probs.exp() * &finite_log_probs)
                     .sum_dim_intlist([-1].as_ref(), false, Kind::Float)
                     .mean(Kind::Float))
                 .double_value(&[]) as f32;
