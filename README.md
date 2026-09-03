@@ -58,10 +58,11 @@ temporary rollout batch, computes GAE advantages and value targets, and performs
 full-batch clipped PPO updates before discarding that batch; it does not use
 an off-policy replay buffer. Observations are fixed-size and player-relative:
 the active player's board is first, the centre is encoded separately from
-factory bowls, and the two-player action space contains six source slots
+factory bowls, and the two-player wire action space contains six source slots
 (centre plus five factories), five tile types, and six destinations. The
-policy is a categorical distribution over this fixed 180-action space, with
-illegal actions masked before sampling and likelihood evaluation.
+policy scores state/action pairs and normalizes a categorical distribution over
+the currently legal candidates; the fixed 180-action IDs remain the boundary
+used by `step` and action masks.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 

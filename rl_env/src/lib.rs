@@ -24,10 +24,16 @@ const MAX_PENALTY_TILES: f32 = 7.0;
 const REWARD_SCALE: f32 = 1.0;
 const BOARD_FEATURES_PER_PLAYER: usize =
     BOARD_SIZE * BOARD_SIZE * TILE_TYPES + BOARD_SIZE * (TILE_TYPES + 1) + 2 + 1 + 3 * BOARD_SIZE;
+const ACTION_SOURCE_FEATURES: usize = BOWL_SLOTS;
+const ACTION_DESTINATION_FEATURES: usize = DESTINATIONS_PER_ACTION;
 
 /// Number of discrete actions in the fixed wire-bowl/tile/destination action space.
 /// Wire bowl slot zero is the centre, followed by the five two-player factories.
 pub const ACTION_SPACE_SIZE: usize = BOWL_SLOTS * TILE_TYPES * DESTINATIONS_PER_ACTION;
+
+/// Number of one-hot values used to describe a candidate action to the actor.
+pub const ACTION_FEATURE_SIZE: usize =
+    ACTION_SOURCE_FEATURES + TILE_TYPES + ACTION_DESTINATION_FEATURES;
 
 /// Number of values in every encoded, active-player-relative observation.
 pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
@@ -35,6 +41,22 @@ pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
     + TILE_TYPES
     + FIRST_TOKEN_FEATURES
     + 2;
+
+/// Encodes a canonical action as source, tile-type, and destination one-hot features.
+pub fn encode_action_features(action: usize) -> Option<[f32; ACTION_FEATURE_SIZE]> {
+    if action >= ACTION_SPACE_SIZE {
+        return None;
+    }
+
+    let source = action / (TILE_TYPES * DESTINATIONS_PER_ACTION);
+    let tile_type = (action / DESTINATIONS_PER_ACTION) % TILE_TYPES;
+    let destination = action % DESTINATIONS_PER_ACTION;
+    let mut features = [0.0; ACTION_FEATURE_SIZE];
+    features[source] = 1.0;
+    features[ACTION_SOURCE_FEATURES + tile_type] = 1.0;
+    features[ACTION_SOURCE_FEATURES + TILE_TYPES + destination] = 1.0;
+    Some(features)
+}
 
 /// Maps canonical RL factory slots to physical factory indices; the centre is
 /// always kept separately in slot zero.
@@ -291,15 +313,31 @@ impl AzulEnv {
     /// Returns a fixed-size mask containing one for every currently legal action.
     pub fn action_mask(&self) -> Tensor {
         let mut mask = vec![0.0; ACTION_SPACE_SIZE];
-        if !self.gamestate.is_game_over() && self.steps < self.max_steps {
-            let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
-            for choice in self.gamestate.get_valid_moves() {
-                if let Some(action) = Self::action_for_move(&choice, &factory_order) {
-                    mask[action] = 1.0;
-                }
-            }
+        for action in self.legal_actions() {
+            mask[action] = 1.0;
         }
         Tensor::from_slice(&mask).to_device(get_device())
+    }
+
+    /// Returns sorted, unique canonical IDs for the currently legal actions.
+    pub fn legal_actions(&self) -> Vec<usize> {
+        if self.gamestate.is_game_over() || self.steps >= self.max_steps {
+            return Vec::new();
+        }
+
+        let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
+        let mut actions: Vec<_> = self
+            .gamestate
+            .get_valid_moves()
+            .iter()
+            .filter_map(|choice| Self::action_for_move(choice, &factory_order))
+            .collect();
+        actions.sort_unstable();
+        assert!(
+            actions.windows(2).all(|pair| pair[0] < pair[1]),
+            "legal move generation produced duplicate canonical action IDs"
+        );
+        actions
     }
 
     /// Applies an action, rejecting out-of-range and illegal moves without panicking.
@@ -546,6 +584,37 @@ mod tests {
         assert_eq!(
             encode_gamestate(environment.get_gamestate()).numel(),
             OBSERVATION_SIZE
+        );
+    }
+
+    #[test]
+    fn action_features_encode_each_move_component_once() {
+        let action = ((2 * TILE_TYPES + 4) * DESTINATIONS_PER_ACTION) + 5;
+        let features = encode_action_features(action).expect("action should be in range");
+
+        assert_eq!(features.iter().filter(|&&value| value == 1.0).count(), 3);
+        assert_eq!(features[2], 1.0);
+        assert_eq!(features[ACTION_SOURCE_FEATURES + 4], 1.0);
+        assert_eq!(features[ACTION_SOURCE_FEATURES + TILE_TYPES + 5], 1.0);
+        assert!(encode_action_features(ACTION_SPACE_SIZE).is_none());
+    }
+
+    #[test]
+    fn legal_action_ids_are_sorted_and_match_the_mask() {
+        let environment = AzulEnv::new(1, 100);
+        let legal_actions = environment.legal_actions();
+        let action_mask = environment.action_mask();
+
+        assert!(!legal_actions.is_empty());
+        assert!(legal_actions.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(
+            legal_actions
+                .iter()
+                .all(|&action| action_mask.double_value(&[action as i64]) == 1.0)
+        );
+        assert_eq!(
+            legal_actions.len(),
+            action_mask.eq(1.0).sum(tch::Kind::Int64).int64_value(&[]) as usize
         );
     }
 }

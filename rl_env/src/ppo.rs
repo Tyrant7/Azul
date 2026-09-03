@@ -2,8 +2,8 @@
 
 use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
-use crate::net::{ResNetwork, initialize_actor, initialize_critic};
-use crate::{AzulEnv, get_device};
+use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
+use crate::{ACTION_FEATURE_SIZE, AzulEnv, encode_action_features, get_device};
 
 /// Hyperparameters for the minimal PPO trainer.
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +86,7 @@ pub struct PpoMetrics {
 /// A single transition collected under the current policy.
 struct RolloutStep {
     state: Tensor,
-    action_mask: Tensor,
+    legal_actions: Vec<i64>,
     action: i64,
     old_log_prob: f32,
     reward: f32,
@@ -147,22 +147,44 @@ impl RolloutBatch {
                 .collect::<Vec<_>>(),
             0,
         );
-        let action_masks = Tensor::stack(
-            &self
-                .steps
+        let max_legal_actions = self
+            .steps
+            .iter()
+            .map(|step| step.legal_actions.len())
+            .max()
+            .expect("rollout batches must contain at least one step");
+        let mut candidate_features =
+            vec![0.0_f32; self.steps.len() * max_legal_actions * ACTION_FEATURE_SIZE];
+        let mut candidate_mask = vec![0.0_f32; self.steps.len() * max_legal_actions];
+        let mut action_positions = Vec::with_capacity(self.steps.len());
+        for (step_index, step) in self.steps.iter().enumerate() {
+            let selected_position = step
+                .legal_actions
                 .iter()
-                .map(|step| step.action_mask.shallow_clone())
-                .collect::<Vec<_>>(),
-            0,
-        );
-        let actions = Tensor::from_slice(
-            &self
-                .steps
-                .iter()
-                .map(|step| step.action)
-                .collect::<Vec<_>>(),
-        )
-        .to_device(get_device());
+                .position(|&action| action == step.action)
+                .expect("sampled action must be in the legal candidate list");
+            action_positions.push(selected_position as i64);
+            for (candidate_index, &action) in step.legal_actions.iter().enumerate() {
+                let features = encode_action_features(action as usize)
+                    .expect("rollout action must be in the action space");
+                let feature_offset =
+                    (step_index * max_legal_actions + candidate_index) * ACTION_FEATURE_SIZE;
+                candidate_features[feature_offset..feature_offset + ACTION_FEATURE_SIZE]
+                    .copy_from_slice(&features);
+                candidate_mask[step_index * max_legal_actions + candidate_index] = 1.0;
+            }
+        }
+        let candidate_features = Tensor::from_slice(&candidate_features)
+            .reshape([
+                self.steps.len() as i64,
+                max_legal_actions as i64,
+                ACTION_FEATURE_SIZE as i64,
+            ])
+            .to_device(get_device());
+        let candidate_mask = Tensor::from_slice(&candidate_mask)
+            .reshape([self.steps.len() as i64, max_legal_actions as i64])
+            .to_device(get_device());
+        let action_positions = Tensor::from_slice(&action_positions).to_device(get_device());
         let old_log_probs = Tensor::from_slice(
             &self
                 .steps
@@ -191,8 +213,9 @@ impl RolloutBatch {
 
         RolloutData {
             states,
-            action_masks,
-            actions,
+            candidate_features,
+            candidate_mask,
+            action_positions,
             old_log_probs,
             returns,
             advantages,
@@ -203,43 +226,56 @@ impl RolloutBatch {
 /// Tensor representation of one on-policy rollout.
 struct RolloutData {
     states: Tensor,
-    action_masks: Tensor,
-    actions: Tensor,
+    candidate_features: Tensor,
+    candidate_mask: Tensor,
+    action_positions: Tensor,
     old_log_probs: Tensor,
     returns: Tensor,
     advantages: Tensor,
 }
 
-/// Applies the legal-action mask and returns log-probabilities over actions.
-fn masked_log_probs(logits: &Tensor, action_masks: &Tensor) -> Tensor {
-    let invalid_actions = action_masks.eq(0.0);
+/// Applies the candidate mask and returns log-probabilities over candidates.
+fn masked_log_probs(logits: &Tensor, candidate_mask: &Tensor) -> Tensor {
+    let invalid_actions = candidate_mask.eq(0.0);
     logits
         .masked_fill(&invalid_actions, f64::NEG_INFINITY)
         .log_softmax(-1, Kind::Float)
 }
 
-/// Samples one masked action and records its old log-probability and value estimate.
+/// Samples one legal candidate and records its old log-probability and value estimate.
 fn sample_action(
-    actor: &ResNetwork,
+    actor: &ActionConditionedActor,
     critic: &ResNetwork,
     state: &Tensor,
-    action_mask: &Tensor,
+    legal_actions: &[usize],
 ) -> (i64, f32, f32) {
     no_grad(|| {
         assert!(
-            action_mask.sum(Kind::Float).double_value(&[]) > 0.0,
+            !legal_actions.is_empty(),
             "the environment returned no legal actions"
         );
         let state = state.unsqueeze(0);
-        let logits = actor.forward(&state);
-        let log_probs = masked_log_probs(&logits, &action_mask.unsqueeze(0));
-        let action = log_probs.exp().multinomial(1, false);
+        let feature_values: Vec<_> = legal_actions
+            .iter()
+            .flat_map(|&action| {
+                encode_action_features(action).expect("legal action must be in the action space")
+            })
+            .collect();
+        let action_features = Tensor::from_slice(&feature_values)
+            .reshape([1, legal_actions.len() as i64, ACTION_FEATURE_SIZE as i64])
+            .to_device(get_device());
+        let candidate_mask =
+            Tensor::ones([1, legal_actions.len() as i64], (Kind::Float, get_device()));
+        let logits = actor.forward(&state, &action_features);
+        let log_probs = masked_log_probs(&logits, &candidate_mask);
+        let candidate = log_probs.exp().multinomial(1, false);
+        let candidate_index = candidate.int64_value(&[0, 0]) as usize;
         let old_log_prob = log_probs
-            .gather(1, &action, false)
+            .gather(1, &candidate, false)
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
         let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
-        (action.int64_value(&[0, 0]), old_log_prob, value)
+        (legal_actions[candidate_index] as i64, old_log_prob, value)
     })
 }
 
@@ -271,7 +307,7 @@ fn terminal_win_rate(episodes: &[EpisodeStats]) -> f32 {
 pub struct PpoTrainer {
     actor_vs: nn::VarStore,
     critic_vs: nn::VarStore,
-    actor: ResNetwork,
+    actor: ActionConditionedActor,
     critic: ResNetwork,
     actor_optimizer: nn::Optimizer,
     critic_optimizer: nn::Optimizer,
@@ -340,10 +376,10 @@ impl PpoTrainer {
             let mut approx_kl = 0.0;
             let mut clip_fraction = 0.0;
             for _ in 0..self.config.updates_per_iteration {
-                let logits = self.actor.forward(&data.states);
-                let log_probs = masked_log_probs(&logits, &data.action_masks);
+                let logits = self.actor.forward(&data.states, &data.candidate_features);
+                let log_probs = masked_log_probs(&logits, &data.candidate_mask);
                 let current_log_probs = log_probs
-                    .gather(1, &data.actions.unsqueeze(1), false)
+                    .gather(1, &data.action_positions.unsqueeze(1), false)
                     .squeeze_dim(1);
                 let ratio = (&current_log_probs - &data.old_log_probs).exp();
                 let unclipped = &ratio * &data.advantages;
@@ -426,10 +462,10 @@ impl PpoTrainer {
             let mut state = env.reset(self.config.max_timesteps_per_episode);
             let mut episode_return = 0.0;
             for episode_length in 0..self.config.max_timesteps_per_episode {
-                let action_mask = env.action_mask();
+                let legal_actions = env.legal_actions();
                 let player = env.gamestate.get_active_player();
                 let (action, old_log_prob, value) =
-                    sample_action(&self.actor, &self.critic, &state, &action_mask);
+                    sample_action(&self.actor, &self.critic, &state, &legal_actions);
                 let result = env
                     .step(action as usize)
                     .expect("masked action must be legal");
@@ -448,7 +484,10 @@ impl PpoTrainer {
 
                 batch.steps.push(RolloutStep {
                     state,
-                    action_mask,
+                    legal_actions: legal_actions
+                        .into_iter()
+                        .map(|action| action as i64)
+                        .collect(),
                     action,
                     old_log_prob,
                     reward: result.reward,
