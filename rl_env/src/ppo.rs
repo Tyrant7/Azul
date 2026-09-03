@@ -1,5 +1,6 @@
 //! Minimal on-policy PPO training for the discrete Azul environment.
 
+use rand::RngExt;
 use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
 use crate::metrics::{OptimizationMetrics, PpoMetrics};
@@ -60,6 +61,7 @@ struct RolloutStep {
     next_value: f32,
     player: usize,
     next_player: usize,
+    learner_action: bool,
     terminated: bool,
     truncated: bool,
 }
@@ -107,6 +109,11 @@ impl RolloutBatch {
         let next_players: Vec<_> = self.steps.iter().map(|step| step.next_player).collect();
         let terminated: Vec<_> = self.steps.iter().map(|step| step.terminated).collect();
         let truncated: Vec<_> = self.steps.iter().map(|step| step.truncated).collect();
+        let learner_actions: Vec<_> = self
+            .steps
+            .iter()
+            .map(|step| if step.learner_action { 1.0 } else { 0.0 })
+            .collect();
         let values: Vec<_> = self.steps.iter().map(|step| step.value).collect();
         let next_values: Vec<_> = self.steps.iter().map(|step| step.next_value).collect();
 
@@ -153,6 +160,7 @@ impl RolloutBatch {
         let candidate_mask = Tensor::from_slice(&candidate_mask)
             .reshape([self.steps.len() as i64, max_legal_actions as i64])
             .to_device(get_device());
+        let learner_action_mask = Tensor::from_slice(&learner_actions).to_device(get_device());
         let action_positions = Tensor::from_slice(&action_positions).to_device(get_device());
         let old_log_probs = Tensor::from_slice(
             &self
@@ -188,13 +196,21 @@ impl RolloutBatch {
         let values = Tensor::from_slice(&values).to_device(get_device());
         let raw_advantages = Tensor::from_slice(&raw_advantage_values).to_device(get_device());
         let returns = &raw_advantages + &values;
-        let advantages = (&raw_advantages - raw_advantages.mean(Kind::Float))
-            / (raw_advantages.std(false) + 1e-8);
+        let learner_count = learner_action_mask.sum(Kind::Float).clamp_min(1.0);
+        let learner_mean =
+            (&raw_advantages * &learner_action_mask).sum(Kind::Float) / &learner_count;
+        let centered_advantages = &raw_advantages - &learner_mean;
+        let learner_std = (centered_advantages.square() * &learner_action_mask)
+            .sum(Kind::Float)
+            .divide(&learner_count)
+            .sqrt();
+        let advantages = centered_advantages / (learner_std + 1e-8);
 
         RolloutData {
             states,
             candidate_features,
             candidate_mask,
+            learner_action_mask,
             action_positions,
             old_log_probs,
             returns,
@@ -209,6 +225,7 @@ struct RolloutData {
     states: Tensor,
     candidate_features: Tensor,
     candidate_mask: Tensor,
+    learner_action_mask: Tensor,
     action_positions: Tensor,
     old_log_probs: Tensor,
     returns: Tensor,
@@ -268,6 +285,52 @@ fn masked_log_probs(logits: &Tensor, candidate_mask: &Tensor) -> Tensor {
         .log_softmax(-1, Kind::Float)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpponentKind {
+    Current,
+    Historical(usize),
+    Random,
+    Heuristic,
+}
+
+struct HistoricalPolicy {
+    _var_store: nn::VarStore,
+    actor: ActionConditionedActor,
+}
+
+#[derive(Default)]
+struct OpponentPool {
+    historical: Vec<HistoricalPolicy>,
+}
+
+impl OpponentPool {
+    fn sample(&self) -> OpponentKind {
+        let mut rng = rand::rng();
+        let draw = rng.random::<f64>();
+        self.kind_for_draw(draw, || rng.random_range(0..self.historical.len()))
+    }
+
+    fn kind_for_draw<F>(&self, draw: f64, historical_index: F) -> OpponentKind
+    where
+        F: FnOnce() -> usize,
+    {
+        let (current_weight, historical_weight) = if self.historical.is_empty() {
+            (0.9, 0.0)
+        } else {
+            (0.5, 0.4)
+        };
+        if draw < current_weight {
+            OpponentKind::Current
+        } else if draw < current_weight + historical_weight {
+            OpponentKind::Historical(historical_index())
+        } else if draw < current_weight + historical_weight + 0.05 {
+            OpponentKind::Random
+        } else {
+            OpponentKind::Heuristic
+        }
+    }
+}
+
 /// Samples one legal candidate and records its old log-probability and value estimate.
 fn sample_action(
     actor: &ActionConditionedActor,
@@ -309,6 +372,68 @@ fn sample_action(
     })
 }
 
+fn evaluate_action(
+    actor: &ActionConditionedActor,
+    critic: &ResNetwork,
+    state: &Tensor,
+    legal_candidates: &[(usize, [f32; ACTION_FEATURE_SIZE])],
+    action: usize,
+) -> (f32, f32) {
+    no_grad(|| {
+        let action_index = legal_candidates
+            .iter()
+            .position(|(candidate, _)| *candidate == action)
+            .expect("selected action must be legal");
+        let state = state.unsqueeze(0);
+        let feature_values: Vec<_> = legal_candidates
+            .iter()
+            .flat_map(|(_, features)| features.iter().copied())
+            .collect();
+        let action_features = Tensor::from_slice(&feature_values)
+            .reshape([1, legal_candidates.len() as i64, ACTION_FEATURE_SIZE as i64])
+            .to_device(get_device());
+        let candidate_mask = Tensor::ones(
+            [1, legal_candidates.len() as i64],
+            (Kind::Float, get_device()),
+        );
+        let log_probs = masked_log_probs(&actor.forward(&state, &action_features), &candidate_mask);
+        let action_tensor = Tensor::from_slice(&[action_index as i64])
+            .reshape([1, 1])
+            .to_device(get_device());
+        let old_log_prob = log_probs
+            .gather(1, &action_tensor, false)
+            .squeeze_dim(1)
+            .double_value(&[0]) as f32;
+        let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
+        (old_log_prob, value)
+    })
+}
+
+fn select_random_action(legal_candidates: &[(usize, [f32; ACTION_FEATURE_SIZE])]) -> usize {
+    rand::rng().random_range(0..legal_candidates.len())
+}
+
+fn select_heuristic_action(legal_candidates: &[(usize, [f32; ACTION_FEATURE_SIZE])]) -> usize {
+    let dynamic_offset = ACTION_FEATURE_SIZE - 8;
+    legal_candidates
+        .iter()
+        .enumerate()
+        .max_by(|(_, (_, left)), (_, (_, right))| {
+            let score = |features: &[f32; ACTION_FEATURE_SIZE]| {
+                features[dynamic_offset + 7] * 4.0
+                    + features[dynamic_offset + 1] * 2.0
+                    + features[dynamic_offset + 4]
+                    - features[dynamic_offset + 6] * 3.0
+                    - features[dynamic_offset + 5] * 2.0
+            };
+            score(left)
+                .partial_cmp(&score(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(index, _)| index)
+        .expect("the environment returned no legal actions")
+}
+
 /// Owns the actor, critic, and optimizers for the minimal PPO algorithm.
 pub struct PpoTrainer {
     actor_vs: nn::VarStore,
@@ -318,6 +443,7 @@ pub struct PpoTrainer {
     actor_optimizer: nn::Optimizer,
     critic_optimizer: nn::Optimizer,
     config: PpoConfig,
+    opponent_pool: OpponentPool,
 }
 
 impl PpoTrainer {
@@ -348,7 +474,25 @@ impl PpoTrainer {
             actor_optimizer,
             critic_optimizer,
             config,
+            opponent_pool: OpponentPool::default(),
         })
+    }
+
+    /// Saves the current actor as a frozen historical opponent.
+    pub fn add_historical_opponent(&mut self) -> Result<(), tch::TchError> {
+        let mut var_store = nn::VarStore::new(get_device());
+        let actor = initialize_actor(&var_store.root());
+        var_store.copy(&self.actor_vs)?;
+        self.opponent_pool.historical.push(HistoricalPolicy {
+            _var_store: var_store,
+            actor,
+        });
+        Ok(())
+    }
+
+    /// Returns the number of frozen historical opponents in the pool.
+    pub fn historical_opponent_count(&self) -> usize {
+        self.opponent_pool.historical.len()
     }
 
     /// Collects one fresh rollout batch and applies PPO updates to it.
@@ -392,21 +536,29 @@ impl PpoTrainer {
                     1.0 + self.config.upper_clip_epsilon,
                 );
                 let clipped = clipped_ratio * &data.advantages;
-                let actor_loss_tensor = -unclipped.minimum(&clipped).mean(Kind::Float);
+                let actor_objective = unclipped.minimum(&clipped);
+                let learner_count = data.learner_action_mask.sum(Kind::Float).clamp_min(1.0);
+                let actor_loss_tensor = -(&actor_objective * &data.learner_action_mask)
+                    .sum(Kind::Float)
+                    / &learner_count;
 
                 let values = self.critic.forward(&data.states).squeeze_dim(1);
                 let critic_loss_tensor = values.mse_loss(&data.returns, Reduction::Mean);
 
                 optimization.actor_loss = actor_loss_tensor.double_value(&[]) as f32;
                 optimization.critic_loss = critic_loss_tensor.double_value(&[]) as f32;
-                optimization.approx_kl = (&data.old_log_probs - &current_log_probs)
-                    .mean(Kind::Float)
+                optimization.approx_kl = ((&data.old_log_probs - &current_log_probs)
+                    * &data.learner_action_mask)
+                    .sum(Kind::Float)
+                    .divide(&learner_count)
                     .double_value(&[]) as f32;
                 optimization.clip_fraction = ratio
                     .lt(1.0 - self.config.lower_clip_epsilon)
                     .logical_or(&ratio.gt(1.0 + self.config.upper_clip_epsilon))
                     .to_kind(Kind::Float)
-                    .mean(Kind::Float)
+                    .multiply(&data.learner_action_mask)
+                    .sum(Kind::Float)
+                    .divide(&learner_count)
                     .double_value(&[]) as f32;
                 let finite_log_probs = log_probs.masked_fill(&data.candidate_mask.eq(0.0), 0.0);
                 let entropy_per_state = -(&log_probs.exp() * &finite_log_probs).sum_dim_intlist(
@@ -414,7 +566,10 @@ impl PpoTrainer {
                     false,
                     Kind::Float,
                 );
-                optimization.entropy = entropy_per_state.mean(Kind::Float).double_value(&[]) as f32;
+                optimization.entropy = (&entropy_per_state * &data.learner_action_mask)
+                    .sum(Kind::Float)
+                    .divide(&learner_count)
+                    .double_value(&[]) as f32;
                 let legal_action_count =
                     data.candidate_mask
                         .sum_dim_intlist([-1].as_ref(), false, Kind::Float);
@@ -471,6 +626,7 @@ impl PpoTrainer {
         while batch.len() < self.config.timesteps_per_batch {
             // Rollouts are episode-complete; do not impose a mid-game action cap.
             let mut state = env.reset(usize::MAX);
+            let opponent = self.opponent_pool.sample();
             let mut episode_return = 0.0;
             let mut penalties = [0; 2];
             let mut bonus_points = [0; 2];
@@ -489,11 +645,35 @@ impl PpoTrainer {
                     .map(|(_, features)| *features)
                     .collect();
                 let player = env.gamestate.get_active_player();
-                let (action, old_log_prob, value) =
-                    sample_action(&self.actor, &self.critic, &state, &legal_candidates);
-                let result = env
-                    .step(action as usize)
-                    .expect("masked action must be legal");
+                let learner_action = player == 0;
+                let action = if learner_action {
+                    sample_action(&self.actor, &self.critic, &state, &legal_candidates).0 as usize
+                } else {
+                    match opponent {
+                        OpponentKind::Current => {
+                            sample_action(&self.actor, &self.critic, &state, &legal_candidates).0
+                                as usize
+                        }
+                        OpponentKind::Historical(index) => {
+                            sample_action(
+                                &self.opponent_pool.historical[index].actor,
+                                &self.critic,
+                                &state,
+                                &legal_candidates,
+                            )
+                            .0 as usize
+                        }
+                        OpponentKind::Random => {
+                            legal_candidates[select_random_action(&legal_candidates)].0
+                        }
+                        OpponentKind::Heuristic => {
+                            legal_candidates[select_heuristic_action(&legal_candidates)].0
+                        }
+                    }
+                };
+                let (old_log_prob, value) =
+                    evaluate_action(&self.actor, &self.critic, &state, &legal_candidates, action);
+                let result = env.step(action).expect("masked action must be legal");
                 let next_player = env.gamestate.get_active_player();
                 let next_value = if result.terminated {
                     0.0
@@ -521,13 +701,14 @@ impl PpoTrainer {
                     state,
                     legal_actions,
                     action_features,
-                    action,
+                    action: action as i64,
                     old_log_prob,
                     reward: result.reward,
                     value,
                     next_value,
                     player,
                     next_player,
+                    learner_action,
                     terminated: result.terminated,
                     truncated: result.truncated,
                 });
@@ -663,8 +844,11 @@ fn compute_gae(
 
 #[cfg(test)]
 mod tests {
-    use super::{AzulEnv, PpoConfig, PpoTrainer, compute_gae};
-    use tch::{Kind, Tensor};
+    use super::{
+        AzulEnv, HistoricalPolicy, OpponentKind, OpponentPool, PpoConfig, PpoTrainer, compute_gae,
+    };
+    use crate::{get_device, net::initialize_actor};
+    use tch::{Kind, Tensor, nn};
 
     #[test]
     fn gae_recurses_backward() {
@@ -732,6 +916,39 @@ mod tests {
     }
 
     #[test]
+    fn opponent_pool_uses_league_weights_when_history_exists() {
+        let var_store = nn::VarStore::new(get_device());
+        let actor = initialize_actor(&var_store.root());
+        let pool = OpponentPool {
+            historical: vec![HistoricalPolicy {
+                _var_store: var_store,
+                actor,
+            }],
+        };
+        assert_eq!(pool.kind_for_draw(0.49, || 0), OpponentKind::Current);
+        assert_eq!(pool.kind_for_draw(0.50, || 0), OpponentKind::Historical(0));
+        assert_eq!(pool.kind_for_draw(0.90, || 0), OpponentKind::Random);
+        assert_eq!(pool.kind_for_draw(0.96, || 0), OpponentKind::Heuristic);
+    }
+
+    #[test]
+    fn opponent_pool_falls_back_to_current_for_missing_history() {
+        let pool = OpponentPool::default();
+        assert_eq!(
+            pool.kind_for_draw(0.89, || unreachable!()),
+            OpponentKind::Current
+        );
+        assert_eq!(
+            pool.kind_for_draw(0.90, || unreachable!()),
+            OpponentKind::Random
+        );
+        assert_eq!(
+            pool.kind_for_draw(0.96, || unreachable!()),
+            OpponentKind::Heuristic
+        );
+    }
+
+    #[test]
     fn trainer_collects_a_complete_game_before_updating() {
         let config = PpoConfig {
             timesteps_per_batch: 1,
@@ -753,5 +970,14 @@ mod tests {
 
         assert_eq!(callbacks, 1);
         assert!(reported_timesteps > 1);
+    }
+
+    #[test]
+    fn trainer_can_capture_a_historical_opponent() {
+        let mut trainer = PpoTrainer::new(PpoConfig::default()).expect("trainer should initialize");
+        trainer
+            .add_historical_opponent()
+            .expect("historical copy should initialize");
+        assert_eq!(trainer.historical_opponent_count(), 1);
     }
 }

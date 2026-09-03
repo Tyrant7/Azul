@@ -10,8 +10,9 @@ fn main() -> Result<(), tch::TchError> {
     };
 
     let mut trainer = rl_env::PpoTrainer::new(config)?;
+    trainer.add_historical_opponent()?;
     let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
-    let mut logger = logging::TrainingLogger::new("camf_split_LR_stability");
+    let mut logger = logging::TrainingLogger::new("camf_spl_LR_stab_league");
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));
