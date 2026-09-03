@@ -575,7 +575,7 @@ fn parameter_snapshot(var_store: &nn::VarStore) -> Vec<Tensor> {
         var_store
             .trainable_variables()
             .into_iter()
-            .map(|variable| variable.detach())
+            .map(|variable| variable.detach().copy())
             .collect()
     })
 }
