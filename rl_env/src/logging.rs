@@ -90,11 +90,8 @@ impl TrainingLogger {
         );
         self.writer
             .add_scalar("episode/mean_winner_score", metrics.mean_winner_score, step);
-        self.writer.add_scalar(
-            "episode/player_zero_win_rate",
-            metrics.player_zero_win_rate,
-            step,
-        );
+        self.writer
+            .add_scalar("episode/learner_win_rate", metrics.learner_win_rate, step);
 
         for (player, values) in [("player_zero", 0), ("player_one", 1)] {
             let penalties_tag = format!("game/{player}_average_penalties");
@@ -150,7 +147,7 @@ impl TrainingLogger {
             metrics.advantage_std,
             metrics.explained_variance,
             metrics.mean_final_score_difference,
-            metrics.player_zero_win_rate,
+            metrics.learner_win_rate,
         );
     }
 }

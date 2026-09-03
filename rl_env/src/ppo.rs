@@ -80,7 +80,7 @@ pub(crate) struct EpisodeStats {
     pub(crate) final_score_difference: f32,
     pub(crate) winner_score: f32,
     pub(crate) terminated: bool,
-    pub(crate) player_zero_won: bool,
+    pub(crate) learner_won: bool,
     pub(crate) penalties: [usize; 2],
     pub(crate) bonus_points: [usize; 2],
     pub(crate) rows_filled: [usize; 2],
@@ -626,6 +626,7 @@ impl PpoTrainer {
         while batch.len() < self.config.timesteps_per_batch {
             // Rollouts are episode-complete; do not impose a mid-game action cap.
             let mut state = env.reset(usize::MAX);
+            let learner_player = rand::rng().random_range(0..2);
             let opponent = self.opponent_pool.sample();
             let mut episode_return = 0.0;
             let mut penalties = [0; 2];
@@ -645,7 +646,7 @@ impl PpoTrainer {
                     .map(|(_, features)| *features)
                     .collect();
                 let player = env.gamestate.get_active_player();
-                let learner_action = player == 0;
+                let learner_action = player == learner_player;
                 let (action, old_log_prob, value) = if learner_action {
                     let (action, old_log_prob, value) =
                         sample_action(&self.actor, &self.critic, &state, &legal_candidates);
@@ -735,16 +736,21 @@ impl PpoTrainer {
 
                 if result.terminated {
                     let boards = env.gamestate.get_boards();
-                    let final_score_difference =
-                        boards[0].get_score() as f32 - boards[1].get_score() as f32;
-                    let winner_score = boards[0].get_score().max(boards[1].get_score()) as f32;
+                    let opponent_player = 1 - learner_player;
+                    let final_score_difference = boards[learner_player].get_score() as f32
+                        - boards[opponent_player].get_score() as f32;
+                    let winner_score = boards[learner_player]
+                        .get_score()
+                        .max(boards[opponent_player].get_score())
+                        as f32;
                     batch.episodes.push(EpisodeStats {
                         reward_sum: episode_return,
                         length: episode_length,
                         final_score_difference,
                         winner_score,
                         terminated: result.terminated,
-                        player_zero_won: result.terminated && env.gamestate.get_winner() == 0,
+                        learner_won: result.terminated
+                            && env.gamestate.get_winner() == learner_player,
                         penalties,
                         bonus_points,
                         rows_filled,

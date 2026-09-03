@@ -11,7 +11,7 @@ pub struct PpoMetrics {
     pub mean_episode_length: f32,
     pub mean_final_score_difference: f32,
     pub mean_winner_score: f32,
-    pub player_zero_win_rate: f32,
+    pub learner_win_rate: f32,
     pub average_penalties_per_game: [f32; 2],
     pub average_bonus_points_per_game: [f32; 2],
     pub average_rows_filled_per_game: [f32; 2],
@@ -80,7 +80,7 @@ impl PpoMetrics {
                 episode.final_score_difference
             }),
             mean_winner_score: mean_episode_metric(episodes, |episode| episode.winner_score),
-            player_zero_win_rate: terminal_win_rate(episodes),
+            learner_win_rate: terminal_win_rate(episodes),
             average_penalties_per_game: mean_episode_array(episodes, |episode| episode.penalties),
             average_bonus_points_per_game: mean_episode_array(episodes, |episode| {
                 episode.bonus_points
@@ -161,7 +161,7 @@ fn terminal_win_rate(episodes: &[EpisodeStats]) -> f32 {
         return 0.0;
     }
     terminal_episodes
-        .filter(|episode| episode.player_zero_won)
+        .filter(|episode| episode.learner_won)
         .count() as f32
         / terminal_count as f32
 }
