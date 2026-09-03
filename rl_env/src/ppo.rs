@@ -94,6 +94,36 @@ pub struct PpoMetrics {
     pub approx_kl: f32,
     /// Fraction of samples outside the PPO clipping range in the final epoch.
     pub clip_fraction: f32,
+    /// Mean of the rollout return targets used by the critic.
+    pub return_mean: f32,
+    /// Standard deviation of the rollout return targets.
+    pub return_std: f32,
+    /// Minimum rollout return target.
+    pub return_min: f32,
+    /// Maximum rollout return target.
+    pub return_max: f32,
+    /// Mean value prediction recorded during rollout collection.
+    pub value_mean: f32,
+    /// Standard deviation of rollout value predictions.
+    pub value_std: f32,
+    /// Minimum rollout value prediction.
+    pub value_min: f32,
+    /// Maximum rollout value prediction.
+    pub value_max: f32,
+    /// Mean unnormalized GAE advantage.
+    pub advantage_mean: f32,
+    /// Standard deviation of unnormalized GAE advantages.
+    pub advantage_std: f32,
+    /// Minimum unnormalized GAE advantage.
+    pub advantage_min: f32,
+    /// Maximum unnormalized GAE advantage.
+    pub advantage_max: f32,
+    /// Explained variance of rollout value predictions against return targets.
+    pub explained_variance: f32,
+    /// L2 norm of the actor parameter update in the final epoch.
+    pub actor_update_norm: f32,
+    /// L2 norm of the critic parameter update in the final epoch.
+    pub critic_update_norm: f32,
 }
 
 /// A single transition collected under the current policy.
@@ -211,7 +241,7 @@ impl RolloutBatch {
         )
         .to_device(get_device());
 
-        let raw_advantages = compute_gae(
+        let raw_advantage_values = compute_gae(
             &rewards,
             &values,
             &next_values,
@@ -222,8 +252,19 @@ impl RolloutBatch {
             gamma,
             lambda,
         );
+        let return_values: Vec<_> = values
+            .iter()
+            .zip(&raw_advantage_values)
+            .map(|(value, advantage)| value + advantage)
+            .collect();
+        let diagnostics = RolloutDiagnostics {
+            return_stats: slice_stats(&return_values),
+            value_stats: slice_stats(&values),
+            advantage_stats: slice_stats(&raw_advantage_values),
+            explained_variance: explained_variance(&values, &return_values),
+        };
         let values = Tensor::from_slice(&values).to_device(get_device());
-        let raw_advantages = Tensor::from_slice(&raw_advantages).to_device(get_device());
+        let raw_advantages = Tensor::from_slice(&raw_advantage_values).to_device(get_device());
         let returns = &raw_advantages + &values;
         let advantages = (&raw_advantages - raw_advantages.mean(Kind::Float))
             / (raw_advantages.std(false) + 1e-8);
@@ -236,6 +277,7 @@ impl RolloutBatch {
             old_log_probs,
             returns,
             advantages,
+            diagnostics,
         }
     }
 }
@@ -249,6 +291,51 @@ struct RolloutData {
     old_log_probs: Tensor,
     returns: Tensor,
     advantages: Tensor,
+    diagnostics: RolloutDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RolloutDiagnostics {
+    return_stats: [f32; 4],
+    value_stats: [f32; 4],
+    advantage_stats: [f32; 4],
+    explained_variance: f32,
+}
+
+fn slice_stats(values: &[f32]) -> [f32; 4] {
+    assert!(!values.is_empty());
+    let mean = values.iter().sum::<f32>() / values.len() as f32;
+    let variance = values
+        .iter()
+        .map(|value| (value - mean).powi(2))
+        .sum::<f32>()
+        / values.len() as f32;
+    [
+        mean,
+        variance.sqrt(),
+        values.iter().copied().fold(f32::INFINITY, f32::min),
+        values.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+    ]
+}
+
+fn explained_variance(values: &[f32], targets: &[f32]) -> f32 {
+    assert_eq!(values.len(), targets.len());
+    let target_mean = targets.iter().sum::<f32>() / targets.len() as f32;
+    let target_variance = targets
+        .iter()
+        .map(|target| (target - target_mean).powi(2))
+        .sum::<f32>()
+        / targets.len() as f32;
+    if target_variance == 0.0 {
+        return 0.0;
+    }
+    let residual_variance = values
+        .iter()
+        .zip(targets)
+        .map(|(value, target)| (target - value).powi(2))
+        .sum::<f32>()
+        / targets.len() as f32;
+    1.0 - residual_variance / target_variance
 }
 
 /// Applies the candidate mask and returns log-probabilities over candidates.
@@ -418,6 +505,8 @@ impl PpoTrainer {
             let mut critic_grad_clip_coefficient = 1.0;
             let mut approx_kl = 0.0;
             let mut clip_fraction = 0.0;
+            let mut actor_update_norm = 0.0;
+            let mut critic_update_norm = 0.0;
             for _ in 0..self.config.updates_per_iteration {
                 let logits = self.actor.forward(&data.states, &data.candidate_features);
                 let log_probs = masked_log_probs(&logits, &data.candidate_mask);
@@ -453,18 +542,22 @@ impl PpoTrainer {
                 actor_grad_norm = gradient_norm(&self.actor_vs);
                 actor_grad_clip_coefficient =
                     gradient_clip_coefficient(actor_grad_norm, self.config.max_grad_norm);
+                let actor_parameters = parameter_snapshot(&self.actor_vs);
                 self.actor_optimizer
                     .clip_grad_norm(self.config.max_grad_norm);
                 self.actor_optimizer.step();
+                actor_update_norm = parameter_update_norm(&actor_parameters, &self.actor_vs);
 
                 self.critic_optimizer.zero_grad();
                 critic_loss_tensor.backward();
                 critic_grad_norm = gradient_norm(&self.critic_vs);
                 critic_grad_clip_coefficient =
                     gradient_clip_coefficient(critic_grad_norm, self.config.max_grad_norm);
+                let critic_parameters = parameter_snapshot(&self.critic_vs);
                 self.critic_optimizer
                     .clip_grad_norm(self.config.max_grad_norm);
                 self.critic_optimizer.step();
+                critic_update_norm = parameter_update_norm(&critic_parameters, &self.critic_vs);
             }
 
             iteration += 1;
@@ -509,6 +602,21 @@ impl PpoTrainer {
                 critic_grad_clip_coefficient,
                 approx_kl: approx_kl as f32,
                 clip_fraction: clip_fraction as f32,
+                return_mean: data.diagnostics.return_stats[0],
+                return_std: data.diagnostics.return_stats[1],
+                return_min: data.diagnostics.return_stats[2],
+                return_max: data.diagnostics.return_stats[3],
+                value_mean: data.diagnostics.value_stats[0],
+                value_std: data.diagnostics.value_stats[1],
+                value_min: data.diagnostics.value_stats[2],
+                value_max: data.diagnostics.value_stats[3],
+                advantage_mean: data.diagnostics.advantage_stats[0],
+                advantage_std: data.diagnostics.advantage_stats[1],
+                advantage_min: data.diagnostics.advantage_stats[2],
+                advantage_max: data.diagnostics.advantage_stats[3],
+                explained_variance: data.diagnostics.explained_variance,
+                actor_update_norm,
+                critic_update_norm,
             });
         }
     }
@@ -625,6 +733,32 @@ fn gradient_norm(var_store: &nn::VarStore) -> f32 {
         if squared_norms.is_empty() {
             return 0.0;
         }
+        Tensor::stack(&squared_norms, 0)
+            .sum(Kind::Float)
+            .sqrt()
+            .double_value(&[]) as f32
+    })
+}
+
+fn parameter_snapshot(var_store: &nn::VarStore) -> Vec<Tensor> {
+    no_grad(|| {
+        var_store
+            .trainable_variables()
+            .into_iter()
+            .map(|variable| variable.detach())
+            .collect()
+    })
+}
+
+fn parameter_update_norm(before: &[Tensor], var_store: &nn::VarStore) -> f32 {
+    no_grad(|| {
+        let after = var_store.trainable_variables();
+        assert_eq!(before.len(), after.len());
+        let squared_norms: Vec<_> = before
+            .iter()
+            .zip(after)
+            .map(|(before, after)| (after - before).square().sum(Kind::Float))
+            .collect();
         Tensor::stack(&squared_norms, 0)
             .sum(Kind::Float)
             .sqrt()
