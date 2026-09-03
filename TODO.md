@@ -49,7 +49,7 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 - Add optional opponent pools, fixed checkpoints, and exploitability-style evaluation
 
 ### Immediate next milestone
-- The initial minimal PPO baseline is implemented in `rl_env/src/ppo.rs`: it uses a two-player shared policy, player-relative observations, legal-action masking, discounted rewards-to-go, and score-difference rewards.
+- The initial minimal PPO baseline is implemented in `rl_env/src/ppo.rs`: it uses a two-player shared policy, player-relative observations, legal-action masking, GAE returns, and score-difference rewards.
 - Extend the baseline into a complete training system with deterministic evaluation, checkpointing, and reproducible configuration.
 - Add deterministic evaluation against random and heuristic baselines before introducing self-play or deeper search.
 - Only after the PPO baseline is stable, explore MCTS or AlphaZero-style search on top of the learned policy/value model.
@@ -57,13 +57,13 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 ### Model and training runtime
 - Choose the model representation and backend, with CPU inference available for tests and a GPU path where useful
 - Harden observation encoding, policy logits, value prediction, and batched inference with golden tests
-- Extend the current loss and optimizer path with gradient clipping, learning-rate schedules, and entropy/value-loss weighting
+- Extend the current loss and optimizer path with learning-rate schedules and entropy/value-loss weighting
 - Implement rollout workers and an actor/learner data path
 - Support configurable parallel environments, inference batches, rollout length, and update frequency
 - Add checkpoint save/load for model weights, optimizer state, scheduler state, counters, configuration, and RNG state
 - Add checkpoint compatibility/versioning and a way to resume interrupted training
 - Add durable trajectory storage with episode IDs, observations, actions, masks, rewards, values, log-probabilities, and terminal flags when experiments need it; PPO's current rollout batch is intentionally temporary and on-policy
-- Add generalized advantage estimation or the equivalent return/target calculation for the selected algorithm
+- Evaluate whether the current generalized advantage estimation settings need tuning for longer or parallel rollouts
 - Add replay-buffer capacity, sampling, prioritization, persistence, and cleanup only if a future off-policy algorithm needs replay
 
 - Complete UAI command handling and document the command/response grammar.

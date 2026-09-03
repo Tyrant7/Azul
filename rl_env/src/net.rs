@@ -5,10 +5,10 @@ use tch::{
     nn::{self, Module},
 };
 
-use crate::{ACTION_SPACE_SIZE, OBSERVATION_SIZE};
+use crate::{ACTION_FEATURE_SIZE, OBSERVATION_SIZE};
 
 const INPUT_SIZE: i64 = OBSERVATION_SIZE as i64;
-const OUTPUT_SIZE: i64 = ACTION_SPACE_SIZE as i64;
+const ACTION_FEATURES: i64 = ACTION_FEATURE_SIZE as i64;
 const HIDDEN: i64 = 256;
 const NUM_BLOCKS: usize = 4;
 
@@ -83,48 +83,101 @@ impl ResBlock {
     }
 }
 
-/// Residual multilayer perceptron used as an actor or critic.
+/// Encodes a state observation into the shared hidden representation.
 #[derive(Debug)]
-pub struct ResNetwork {
+struct StateEncoder {
     input: nn::Linear,
     blocks: Vec<ResBlock>,
-    head: nn::Linear,
 }
 
-impl Module for ResNetwork {
+impl StateEncoder {
+    fn new(vs: &nn::Path) -> Self {
+        let mut blocks = Vec::with_capacity(NUM_BLOCKS);
+        for i in 0..NUM_BLOCKS {
+            blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
+        }
+
+        Self {
+            input: hidden_linear(vs / "input", INPUT_SIZE, HIDDEN),
+            blocks,
+        }
+    }
+
     fn forward(&self, xs: &Tensor) -> Tensor {
         let mut xs = self.input.forward(xs).elu();
         for block in &self.blocks {
             xs = block.forward(&xs);
         }
-        self.head.forward(&xs)
+        xs
     }
 }
 
-/// Builds a policy network whose outputs are action logits.
-pub fn initialize_actor(vs: &nn::Path) -> ResNetwork {
-    let mut blocks = Vec::with_capacity(NUM_BLOCKS);
-    for i in 0..NUM_BLOCKS {
-        blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
-    }
+/// Residual multilayer perceptron used for state-value estimation.
+#[derive(Debug)]
+pub struct ResNetwork {
+    encoder: StateEncoder,
+    head: nn::Linear,
+}
 
-    ResNetwork {
-        input: hidden_linear(vs / "input", INPUT_SIZE, HIDDEN),
-        blocks,
-        head: head_linear(vs / "head", HIDDEN, OUTPUT_SIZE),
+impl Module for ResNetwork {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        self.head.forward(&self.encoder.forward(xs))
+    }
+}
+
+/// Scores candidate actions conditioned on a shared state representation.
+#[derive(Debug)]
+pub struct ActionConditionedActor {
+    encoder: StateEncoder,
+    action_input: nn::Linear,
+    action_output: nn::Linear,
+}
+
+impl ActionConditionedActor {
+    /// Returns one unnormalized logit for every candidate action.
+    pub fn forward(&self, states: &Tensor, action_features: &Tensor) -> Tensor {
+        let state_features = self.encoder.forward(states);
+        let state_size = state_features.size();
+        let action_size = action_features.size();
+        assert_eq!(
+            state_size.len(),
+            2,
+            "states must have shape [batch, features]"
+        );
+        assert_eq!(
+            action_size.len(),
+            3,
+            "action features must have shape [batch, candidates, features]"
+        );
+        assert_eq!(state_size[0], action_size[0]);
+        assert_eq!(action_size[2], ACTION_FEATURES);
+
+        let batch_size = action_size[0];
+        let candidate_count = action_size[1];
+        let expanded_states = state_features
+            .unsqueeze(1)
+            .expand([batch_size, candidate_count, HIDDEN], true);
+        let inputs = Tensor::cat(&[expanded_states, action_features.shallow_clone()], -1)
+            .view([-1, HIDDEN + ACTION_FEATURES]);
+        self.action_output
+            .forward(&self.action_input.forward(&inputs).elu())
+            .view([batch_size, candidate_count])
+    }
+}
+
+/// Builds an actor that scores each candidate move from the current state.
+pub fn initialize_actor(vs: &nn::Path) -> ActionConditionedActor {
+    ActionConditionedActor {
+        encoder: StateEncoder::new(&(vs / "state")),
+        action_input: hidden_linear(vs / "action_input", HIDDEN + ACTION_FEATURES, HIDDEN),
+        action_output: head_linear(vs / "action_output", HIDDEN, 1),
     }
 }
 
 /// Builds a value network whose output estimates the current state value.
 pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
-    let mut blocks = Vec::with_capacity(NUM_BLOCKS);
-    for i in 0..NUM_BLOCKS {
-        blocks.push(ResBlock::new(&(vs / format!("block{i}")), HIDDEN, HIDDEN));
-    }
-
     ResNetwork {
-        input: hidden_linear(vs / "input", INPUT_SIZE, HIDDEN),
-        blocks,
+        encoder: StateEncoder::new(vs),
         head: head_linear(vs / "head", HIDDEN, 1),
     }
 }
