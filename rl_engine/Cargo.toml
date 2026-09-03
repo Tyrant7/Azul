@@ -1,0 +1,9 @@
+[package]
+name = "rl_engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+azul_movegen = { package = "movegen", path = "../movegen" }
+interface = { path = "../interface" }
+rl_env = { path = "../rl_env" }

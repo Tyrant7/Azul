@@ -4,5 +4,6 @@ members = [
     "interface", 
     "random_engine", 
     "rl_env",
+    "rl_engine",
 ]
 resolver = "3"
