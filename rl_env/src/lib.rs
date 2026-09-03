@@ -288,6 +288,79 @@ pub struct StepResult {
     pub terminated: bool,
     /// Whether the environment stopped because its step limit was reached.
     pub truncated: bool,
+    /// Round-level diagnostics when this action resolved a round.
+    pub round_diagnostics: Option<RoundDiagnostics>,
+}
+
+/// Aggregate board statistics produced when a round is resolved.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RoundDiagnostics {
+    /// Total scoring-space penalty tiles across all players this round.
+    pub penalties: usize,
+    /// Total points from newly collected bonuses this round.
+    pub bonus_points: usize,
+    /// Number of newly completed wall rows across all players.
+    pub rows_filled: usize,
+    /// Number of newly completed wall columns across all players.
+    pub columns_filled: usize,
+    /// Number of newly collected five-of-a-kind bonuses across all players.
+    pub tile_bonuses: usize,
+}
+
+#[derive(Clone, Copy)]
+struct BoardRoundStats {
+    rows_filled: usize,
+    columns_filled: usize,
+    bonuses: [bool; TILE_TYPES * 3],
+}
+
+fn board_round_stats(board: &Board) -> BoardRoundStats {
+    let placed = board.get_placed();
+    let columns_filled = (0..BOARD_SIZE)
+        .filter(|&column| placed.iter().all(|row| row[column].is_some()))
+        .count();
+    let bonuses = board.get_bonuses();
+    let mut bonus_flags = [false; TILE_TYPES * 3];
+    bonus_flags[..TILE_TYPES].copy_from_slice(&bonuses.rows);
+    bonus_flags[TILE_TYPES..2 * TILE_TYPES].copy_from_slice(&bonuses.columns);
+    bonus_flags[2 * TILE_TYPES..].copy_from_slice(&bonuses.tile_types);
+    BoardRoundStats {
+        rows_filled: board.count_horizontal_lines(),
+        columns_filled,
+        bonuses: bonus_flags,
+    }
+}
+
+fn round_diagnostics(
+    before: &[BoardRoundStats],
+    after: &[BoardRoundStats],
+    penalties: usize,
+) -> RoundDiagnostics {
+    let mut diagnostics = RoundDiagnostics {
+        penalties,
+        ..RoundDiagnostics::default()
+    };
+    for (before, after) in before.iter().zip(after) {
+        diagnostics.rows_filled += after.rows_filled.saturating_sub(before.rows_filled);
+        diagnostics.columns_filled += after.columns_filled.saturating_sub(before.columns_filled);
+        for (index, (was_collected, is_collected)) in
+            before.bonuses.iter().zip(after.bonuses).enumerate()
+        {
+            if !was_collected && is_collected {
+                diagnostics.bonus_points += match index / TILE_TYPES {
+                    0 => 2,
+                    1 => 7,
+                    _ => 10,
+                };
+            }
+        }
+        diagnostics.tile_bonuses += after.bonuses[2 * TILE_TYPES..]
+            .iter()
+            .zip(&before.bonuses[2 * TILE_TYPES..])
+            .filter(|(was_collected, is_collected)| !**was_collected && **is_collected)
+            .count();
+    }
+    diagnostics
 }
 
 impl AzulEnv {
@@ -445,6 +518,12 @@ impl AzulEnv {
         let factory_order = FactoryOrder::new(self.gamestate.get_factory_bowls());
         let choice = Self::map_action(action, &factory_order).ok_or(IllegalMoveError)?;
         let acting_player = self.gamestate.get_active_player();
+        let before_round_stats: Vec<_> = self
+            .gamestate
+            .get_boards()
+            .iter()
+            .map(board_round_stats)
+            .collect();
         let before_scores: Vec<i64> = self
             .gamestate
             .get_boards()
@@ -456,9 +535,34 @@ impl AzulEnv {
         self.steps += 1;
 
         let round_over = self.gamestate.round_over();
+        let round_penalties = if round_over {
+            self.gamestate
+                .get_boards()
+                .iter()
+                .map(|board| board.get_penalties())
+                .sum()
+        } else {
+            0
+        };
         if round_over {
             self.gamestate.setup_next_round();
         }
+
+        let round_diagnostics = if round_over {
+            let after_round_stats: Vec<_> = self
+                .gamestate
+                .get_boards()
+                .iter()
+                .map(board_round_stats)
+                .collect();
+            Some(round_diagnostics(
+                &before_round_stats,
+                &after_round_stats,
+                round_penalties,
+            ))
+        } else {
+            None
+        };
 
         let score_deltas: Vec<i64> = if round_over {
             self.gamestate
@@ -480,6 +584,7 @@ impl AzulEnv {
             reward: calculate_reward(&score_deltas, acting_player),
             terminated,
             truncated,
+            round_diagnostics,
         })
     }
 

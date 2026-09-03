@@ -53,7 +53,7 @@ pub struct PpoMetrics {
     pub timesteps: usize,
     /// Number of transitions in this rollout batch.
     pub batch_timesteps: usize,
-    /// Number of complete or truncated episodes in this batch.
+    /// Number of complete games in this batch.
     pub episodes: usize,
     /// Mean sum of environment rewards per episode.
     pub mean_episode_return: f32,
@@ -65,6 +65,16 @@ pub struct PpoMetrics {
     pub mean_winner_score: f32,
     /// Fraction of terminal episodes won by player zero.
     pub player_zero_win_rate: f32,
+    /// Mean scoring-space penalty tiles per game across players.
+    pub average_penalties_per_game: f32,
+    /// Mean bonus points earned per game across players.
+    pub average_bonus_points_per_game: f32,
+    /// Mean wall rows completed per game across players.
+    pub average_rows_filled_per_game: f32,
+    /// Mean wall columns completed per game across players.
+    pub average_columns_filled_per_game: f32,
+    /// Mean five-of-a-kind bonuses earned per game across players.
+    pub average_tile_bonuses_per_game: f32,
     /// Actor surrogate loss from the final update epoch.
     pub actor_loss: f32,
     /// Critic mean-squared error from the final update epoch.
@@ -114,6 +124,11 @@ struct EpisodeStats {
     winner_score: f32,
     terminated: bool,
     player_zero_won: bool,
+    penalties: usize,
+    bonus_points: usize,
+    rows_filled: usize,
+    columns_filled: usize,
+    tile_bonuses: usize,
 }
 
 impl RolloutBatch {
@@ -446,6 +461,21 @@ impl PpoTrainer {
                     episode.winner_score
                 }),
                 player_zero_win_rate: terminal_win_rate(&episode_stats),
+                average_penalties_per_game: mean_episode_metric(&episode_stats, |episode| {
+                    episode.penalties as f32
+                }),
+                average_bonus_points_per_game: mean_episode_metric(&episode_stats, |episode| {
+                    episode.bonus_points as f32
+                }),
+                average_rows_filled_per_game: mean_episode_metric(&episode_stats, |episode| {
+                    episode.rows_filled as f32
+                }),
+                average_columns_filled_per_game: mean_episode_metric(&episode_stats, |episode| {
+                    episode.columns_filled as f32
+                }),
+                average_tile_bonuses_per_game: mean_episode_metric(&episode_stats, |episode| {
+                    episode.tile_bonuses as f32
+                }),
                 actor_loss: actor_loss as f32,
                 critic_loss: critic_loss as f32,
                 actor_grad_norm,
@@ -462,9 +492,16 @@ impl PpoTrainer {
     fn collect_rollout(&self, env: &mut AzulEnv) -> RolloutBatch {
         let mut batch = RolloutBatch::with_capacity(self.config.timesteps_per_batch);
         while batch.len() < self.config.timesteps_per_batch {
-            let mut state = env.reset(self.config.max_timesteps_per_episode);
+            // Rollouts are episode-complete; do not impose a mid-game action cap.
+            let mut state = env.reset(usize::MAX);
             let mut episode_return = 0.0;
-            for episode_length in 0..self.config.max_timesteps_per_episode {
+            let mut penalties = 0;
+            let mut bonus_points = 0;
+            let mut rows_filled = 0;
+            let mut columns_filled = 0;
+            let mut tile_bonuses = 0;
+            let mut episode_length = 0;
+            loop {
                 let legal_candidates = env.legal_action_features();
                 let legal_actions = legal_candidates
                     .iter()
@@ -492,6 +529,14 @@ impl PpoTrainer {
                     })
                 };
                 episode_return += result.reward;
+                if let Some(diagnostics) = result.round_diagnostics {
+                    penalties += diagnostics.penalties;
+                    bonus_points += diagnostics.bonus_points;
+                    rows_filled += diagnostics.rows_filled;
+                    columns_filled += diagnostics.columns_filled;
+                    tile_bonuses += diagnostics.tile_bonuses;
+                }
+                episode_length += 1;
 
                 batch.steps.push(RolloutStep {
                     state,
@@ -509,7 +554,7 @@ impl PpoTrainer {
                 });
                 state = result.next_state;
 
-                if result.terminated || result.truncated {
+                if result.terminated {
                     let boards = env.gamestate.get_boards();
                     let final_score_difference =
                         boards[0].get_score() as f32 - boards[1].get_score() as f32;
@@ -521,6 +566,11 @@ impl PpoTrainer {
                         winner_score,
                         terminated: result.terminated,
                         player_zero_won: result.terminated && env.gamestate.get_winner() == 0,
+                        penalties,
+                        bonus_points,
+                        rows_filled,
+                        columns_filled,
+                        tile_bonuses,
                     });
                     break;
                 }
@@ -677,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn trainer_can_update_from_a_truncated_rollout() {
+    fn trainer_collects_a_complete_game_before_updating() {
         let config = PpoConfig {
             timesteps_per_batch: 1,
             max_timesteps_per_episode: 1,
@@ -692,11 +742,11 @@ mod tests {
         trainer.train_with_callback(&mut environment, 1, |metrics| {
             callbacks += 1;
             reported_timesteps = metrics.timesteps;
-            assert_eq!(metrics.batch_timesteps, 1);
+            assert!(metrics.batch_timesteps > 1);
             assert_eq!(metrics.episodes, 1);
         });
 
         assert_eq!(callbacks, 1);
-        assert_eq!(reported_timesteps, 1);
+        assert!(reported_timesteps > 1);
     }
 }

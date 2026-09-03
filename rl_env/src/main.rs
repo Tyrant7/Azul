@@ -79,10 +79,35 @@ fn main() -> Result<(), tch::TchError> {
             metrics.player_zero_win_rate,
             metrics.timesteps,
         );
+        writer.add_scalar(
+            "game/average_penalties",
+            metrics.average_penalties_per_game,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/average_bonus_points",
+            metrics.average_bonus_points_per_game,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/average_rows_filled",
+            metrics.average_rows_filled_per_game,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/average_columns_filled",
+            metrics.average_columns_filled_per_game,
+            metrics.timesteps,
+        );
+        writer.add_scalar(
+            "game/average_tile_bonuses",
+            metrics.average_tile_bonuses_per_game,
+            metrics.timesteps,
+        );
         writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} actor_grad={:.3} critic_grad={:.3} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} actor_grad={:.3} critic_grad={:.3} kl={:.4} clip={:.3} score_diff={:.2} winner_score: {:.2} win_rate={:.3} penalties/game={:.2} bonuses/game={:.2} rows/game={:.2} columns/game={:.2} tile_bonuses/game={:.2}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
@@ -94,6 +119,11 @@ fn main() -> Result<(), tch::TchError> {
             metrics.mean_final_score_difference,
             metrics.mean_winner_score,
             metrics.player_zero_win_rate,
+            metrics.average_penalties_per_game,
+            metrics.average_bonus_points_per_game,
+            metrics.average_rows_filled_per_game,
+            metrics.average_columns_filled_per_game,
+            metrics.average_tile_bonuses_per_game,
         );
     });
     Ok(())
