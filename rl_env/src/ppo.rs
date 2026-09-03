@@ -3,7 +3,7 @@
 use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
 use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
-use crate::{ACTION_FEATURE_SIZE, AzulEnv, encode_action_features, get_device};
+use crate::{ACTION_FEATURE_SIZE, AzulEnv, get_device};
 
 /// Hyperparameters for the minimal PPO trainer.
 #[derive(Debug, Clone, Copy)]
@@ -87,6 +87,7 @@ pub struct PpoMetrics {
 struct RolloutStep {
     state: Tensor,
     legal_actions: Vec<i64>,
+    action_features: Vec<[f32; ACTION_FEATURE_SIZE]>,
     action: i64,
     old_log_prob: f32,
     reward: f32,
@@ -164,13 +165,11 @@ impl RolloutBatch {
                 .position(|&action| action == step.action)
                 .expect("sampled action must be in the legal candidate list");
             action_positions.push(selected_position as i64);
-            for (candidate_index, &action) in step.legal_actions.iter().enumerate() {
-                let features = encode_action_features(action as usize)
-                    .expect("rollout action must be in the action space");
+            for (candidate_index, features) in step.action_features.iter().enumerate() {
                 let feature_offset =
                     (step_index * max_legal_actions + candidate_index) * ACTION_FEATURE_SIZE;
                 candidate_features[feature_offset..feature_offset + ACTION_FEATURE_SIZE]
-                    .copy_from_slice(&features);
+                    .copy_from_slice(features);
                 candidate_mask[step_index * max_legal_actions + candidate_index] = 1.0;
             }
         }
@@ -247,25 +246,25 @@ fn sample_action(
     actor: &ActionConditionedActor,
     critic: &ResNetwork,
     state: &Tensor,
-    legal_actions: &[usize],
+    legal_candidates: &[(usize, [f32; ACTION_FEATURE_SIZE])],
 ) -> (i64, f32, f32) {
     no_grad(|| {
         assert!(
-            !legal_actions.is_empty(),
+            !legal_candidates.is_empty(),
             "the environment returned no legal actions"
         );
         let state = state.unsqueeze(0);
-        let feature_values: Vec<_> = legal_actions
+        let feature_values: Vec<_> = legal_candidates
             .iter()
-            .flat_map(|&action| {
-                encode_action_features(action).expect("legal action must be in the action space")
-            })
+            .flat_map(|(_, features)| features.iter().copied())
             .collect();
         let action_features = Tensor::from_slice(&feature_values)
-            .reshape([1, legal_actions.len() as i64, ACTION_FEATURE_SIZE as i64])
+            .reshape([1, legal_candidates.len() as i64, ACTION_FEATURE_SIZE as i64])
             .to_device(get_device());
-        let candidate_mask =
-            Tensor::ones([1, legal_actions.len() as i64], (Kind::Float, get_device()));
+        let candidate_mask = Tensor::ones(
+            [1, legal_candidates.len() as i64],
+            (Kind::Float, get_device()),
+        );
         let logits = actor.forward(&state, &action_features);
         let log_probs = masked_log_probs(&logits, &candidate_mask);
         let candidate = log_probs.exp().multinomial(1, false);
@@ -275,7 +274,11 @@ fn sample_action(
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
         let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
-        (legal_actions[candidate_index] as i64, old_log_prob, value)
+        (
+            legal_candidates[candidate_index].0 as i64,
+            old_log_prob,
+            value,
+        )
     })
 }
 
@@ -462,10 +465,18 @@ impl PpoTrainer {
             let mut state = env.reset(self.config.max_timesteps_per_episode);
             let mut episode_return = 0.0;
             for episode_length in 0..self.config.max_timesteps_per_episode {
-                let legal_actions = env.legal_actions();
+                let legal_candidates = env.legal_action_features();
+                let legal_actions = legal_candidates
+                    .iter()
+                    .map(|(action, _)| *action as i64)
+                    .collect();
+                let action_features = legal_candidates
+                    .iter()
+                    .map(|(_, features)| *features)
+                    .collect();
                 let player = env.gamestate.get_active_player();
                 let (action, old_log_prob, value) =
-                    sample_action(&self.actor, &self.critic, &state, &legal_actions);
+                    sample_action(&self.actor, &self.critic, &state, &legal_candidates);
                 let result = env
                     .step(action as usize)
                     .expect("masked action must be legal");
@@ -484,10 +495,8 @@ impl PpoTrainer {
 
                 batch.steps.push(RolloutStep {
                     state,
-                    legal_actions: legal_actions
-                        .into_iter()
-                        .map(|action| action as i64)
-                        .collect(),
+                    legal_actions,
+                    action_features,
                     action,
                     old_log_prob,
                     reward: result.reward,
