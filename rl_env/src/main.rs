@@ -15,7 +15,7 @@ fn main() -> Result<(), tch::TchError> {
     let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
     let mut writer = SummaryWriter::new(format!(
         "runs/azul_ppo/{}-{}",
-        "candidate-action_more_features",
+        "camf_split_LR",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")

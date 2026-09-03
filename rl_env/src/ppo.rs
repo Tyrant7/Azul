@@ -14,8 +14,10 @@ pub struct PpoConfig {
     pub max_timesteps_per_episode: usize,
     /// Number of full-batch optimization passes over each rollout.
     pub updates_per_iteration: usize,
-    /// Adam learning rate used by both actor and critic.
-    pub learning_rate: f64,
+    /// Adam learning rate used by actor.
+    pub actor_learning_rate: f64,
+    /// Adam learning rate used by critic.
+    pub critic_learning_rate: f64,
     /// Maximum global L2 norm applied to actor and critic gradients.
     pub max_grad_norm: f64,
     /// Discount factor used for return and advantage estimates.
@@ -34,7 +36,8 @@ impl Default for PpoConfig {
             timesteps_per_batch: 1_000,
             max_timesteps_per_episode: 1_000,
             updates_per_iteration: 4,
-            learning_rate: 3e-4,
+            actor_learning_rate: 3e-4,
+            critic_learning_rate: 1e-4,
             max_grad_norm: 0.5,
             gamma: 0.99,
             lambda: 0.95,
@@ -369,8 +372,9 @@ impl PpoTrainer {
         let critic_vs = nn::VarStore::new(get_device());
         let actor = initialize_actor(&actor_vs.root());
         let critic = initialize_critic(&critic_vs.root());
-        let actor_optimizer = nn::Adam::default().build(&actor_vs, config.learning_rate)?;
-        let critic_optimizer = nn::Adam::default().build(&critic_vs, config.learning_rate)?;
+        let actor_optimizer = nn::Adam::default().build(&actor_vs, config.actor_learning_rate)?;
+        let critic_optimizer =
+            nn::Adam::default().build(&critic_vs, config.critic_learning_rate)?;
 
         Ok(Self {
             actor_vs,
