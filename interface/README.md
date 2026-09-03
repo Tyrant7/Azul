@@ -47,7 +47,7 @@ UAI descriptors; human descriptors may omit process configuration.
 | `args` | one whitespace-free string | none | Additional argument text passed to the engine. |
 | `name` | text | none | Display name for the engine. |
 | `limit_mem` | positive integer MiB | none | Hard per-engine memory cap. Windows uses a Job Object; Linux uses `RLIMIT_AS`. |
-| `limit_threads` | positive integer | `1` | Hard live-thread cap monitored by the interface on Windows/Linux. |
+| `limit_threads` | positive integer | none | Optional hard live-thread cap monitored by the interface on Windows/Linux. |
 
 Example:
 
