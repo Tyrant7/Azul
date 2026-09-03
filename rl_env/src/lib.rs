@@ -6,10 +6,12 @@ use azul_movegen::{
 };
 use tch::Tensor;
 
+mod metrics;
 mod net;
 pub mod ppo;
 
-pub use ppo::{PpoConfig, PpoMetrics, PpoTrainer};
+pub use metrics::PpoMetrics;
+pub use ppo::{PpoConfig, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
 const PLAYER_COUNT: usize = 2;

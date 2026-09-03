@@ -2,6 +2,7 @@
 
 use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
+use crate::metrics::{OptimizationMetrics, PpoMetrics};
 use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
 use crate::{ACTION_FEATURE_SIZE, AzulEnv, get_device};
 
@@ -47,85 +48,6 @@ impl Default for PpoConfig {
     }
 }
 
-/// Scalar diagnostics emitted after each PPO rollout and update iteration.
-#[derive(Debug, Clone, Copy)]
-pub struct PpoMetrics {
-    /// One-based PPO iteration number.
-    pub iteration: usize,
-    /// Total environment transitions collected so far.
-    pub timesteps: usize,
-    /// Number of transitions in this rollout batch.
-    pub batch_timesteps: usize,
-    /// Number of complete games in this batch.
-    pub episodes: usize,
-    /// Mean sum of environment rewards per episode.
-    pub mean_episode_return: f32,
-    /// Mean number of transitions per episode.
-    pub mean_episode_length: f32,
-    /// Mean final player-zero-minus-player-one score difference.
-    pub mean_final_score_difference: f32,
-    /// Mean winner score.
-    pub mean_winner_score: f32,
-    /// Fraction of terminal episodes won by player zero.
-    pub player_zero_win_rate: f32,
-    /// Mean scoring-space penalty tiles per game for each player.
-    pub average_penalties_per_game: [f32; 2],
-    /// Mean bonus points earned per game for each player.
-    pub average_bonus_points_per_game: [f32; 2],
-    /// Mean wall rows completed per game for each player.
-    pub average_rows_filled_per_game: [f32; 2],
-    /// Mean wall columns completed per game for each player.
-    pub average_columns_filled_per_game: [f32; 2],
-    /// Mean five-of-a-kind bonuses earned per game for each player.
-    pub average_tile_bonuses_per_game: [f32; 2],
-    /// Actor surrogate loss from the final update epoch.
-    pub actor_loss: f32,
-    /// Critic mean-squared error from the final update epoch.
-    pub critic_loss: f32,
-    /// Actor global gradient norm measured before clipping in the final epoch.
-    pub actor_grad_norm: f32,
-    /// Critic global gradient norm measured before clipping in the final epoch.
-    pub critic_grad_norm: f32,
-    /// Actor gradient scaling coefficient applied by global-norm clipping.
-    pub actor_grad_clip_coefficient: f32,
-    /// Critic gradient scaling coefficient applied by global-norm clipping.
-    pub critic_grad_clip_coefficient: f32,
-    /// Approximate KL divergence from the rollout policy in the final epoch.
-    pub approx_kl: f32,
-    /// Fraction of samples outside the PPO clipping range in the final epoch.
-    pub clip_fraction: f32,
-    /// Mean of the rollout return targets used by the critic.
-    pub return_mean: f32,
-    /// Standard deviation of the rollout return targets.
-    pub return_std: f32,
-    /// Minimum rollout return target.
-    pub return_min: f32,
-    /// Maximum rollout return target.
-    pub return_max: f32,
-    /// Mean value prediction recorded during rollout collection.
-    pub value_mean: f32,
-    /// Standard deviation of rollout value predictions.
-    pub value_std: f32,
-    /// Minimum rollout value prediction.
-    pub value_min: f32,
-    /// Maximum rollout value prediction.
-    pub value_max: f32,
-    /// Mean unnormalized GAE advantage.
-    pub advantage_mean: f32,
-    /// Standard deviation of unnormalized GAE advantages.
-    pub advantage_std: f32,
-    /// Minimum unnormalized GAE advantage.
-    pub advantage_min: f32,
-    /// Maximum unnormalized GAE advantage.
-    pub advantage_max: f32,
-    /// Explained variance of rollout value predictions against return targets.
-    pub explained_variance: f32,
-    /// L2 norm of the actor parameter update in the final epoch.
-    pub actor_update_norm: f32,
-    /// L2 norm of the critic parameter update in the final epoch.
-    pub critic_update_norm: f32,
-}
-
 /// A single transition collected under the current policy.
 struct RolloutStep {
     state: Tensor,
@@ -150,18 +72,18 @@ struct RolloutBatch {
 
 /// Episode-level values retained for training diagnostics.
 #[derive(Debug, Clone, Copy)]
-struct EpisodeStats {
-    reward_sum: f32,
-    length: usize,
-    final_score_difference: f32,
-    winner_score: f32,
-    terminated: bool,
-    player_zero_won: bool,
-    penalties: [usize; 2],
-    bonus_points: [usize; 2],
-    rows_filled: [usize; 2],
-    columns_filled: [usize; 2],
-    tile_bonuses: [usize; 2],
+pub(crate) struct EpisodeStats {
+    pub(crate) reward_sum: f32,
+    pub(crate) length: usize,
+    pub(crate) final_score_difference: f32,
+    pub(crate) winner_score: f32,
+    pub(crate) terminated: bool,
+    pub(crate) player_zero_won: bool,
+    pub(crate) penalties: [usize; 2],
+    pub(crate) bonus_points: [usize; 2],
+    pub(crate) rows_filled: [usize; 2],
+    pub(crate) columns_filled: [usize; 2],
+    pub(crate) tile_bonuses: [usize; 2],
 }
 
 impl RolloutBatch {
@@ -295,11 +217,11 @@ struct RolloutData {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RolloutDiagnostics {
-    return_stats: [f32; 4],
-    value_stats: [f32; 4],
-    advantage_stats: [f32; 4],
-    explained_variance: f32,
+pub(crate) struct RolloutDiagnostics {
+    pub(crate) return_stats: [f32; 4],
+    pub(crate) value_stats: [f32; 4],
+    pub(crate) advantage_stats: [f32; 4],
+    pub(crate) explained_variance: f32,
 }
 
 fn slice_stats(values: &[f32]) -> [f32; 4] {
@@ -387,51 +309,6 @@ fn sample_action(
     })
 }
 
-/// Computes the mean of one metric across the episodes in a rollout batch.
-fn mean_episode_metric<F>(episodes: &[EpisodeStats], metric: F) -> f32
-where
-    F: Fn(&EpisodeStats) -> f32,
-{
-    if episodes.is_empty() {
-        return 0.0;
-    }
-    episodes.iter().map(metric).sum::<f32>() / episodes.len() as f32
-}
-
-fn mean_episode_array<F>(episodes: &[EpisodeStats], metric: F) -> [f32; 2]
-where
-    F: Fn(&EpisodeStats) -> [usize; 2],
-{
-    if episodes.is_empty() {
-        return [0.0; 2];
-    }
-    let totals = episodes
-        .iter()
-        .map(metric)
-        .fold([0.0; 2], |mut totals, values| {
-            totals[0] += values[0] as f32;
-            totals[1] += values[1] as f32;
-            totals
-        });
-    [
-        totals[0] / episodes.len() as f32,
-        totals[1] / episodes.len() as f32,
-    ]
-}
-
-/// Computes player zero's win rate across terminal, non-truncated episodes.
-fn terminal_win_rate(episodes: &[EpisodeStats]) -> f32 {
-    let terminal_episodes = episodes.iter().filter(|episode| episode.terminated);
-    let terminal_count = terminal_episodes.clone().count();
-    if terminal_count == 0 {
-        return 0.0;
-    }
-    terminal_episodes
-        .filter(|episode| episode.player_zero_won)
-        .count() as f32
-        / terminal_count as f32
-}
-
 /// Owns the actor, critic, and optimizers for the minimal PPO algorithm.
 pub struct PpoTrainer {
     actor_vs: nn::VarStore,
@@ -497,16 +374,11 @@ impl PpoTrainer {
             timesteps += batch_timesteps;
             let data = batch.into_data(self.config.gamma, self.config.lambda);
 
-            let mut actor_loss = 0.0;
-            let mut critic_loss = 0.0;
-            let mut actor_grad_norm = 0.0;
-            let mut critic_grad_norm = 0.0;
-            let mut actor_grad_clip_coefficient = 1.0;
-            let mut critic_grad_clip_coefficient = 1.0;
-            let mut approx_kl = 0.0;
-            let mut clip_fraction = 0.0;
-            let mut actor_update_norm = 0.0;
-            let mut critic_update_norm = 0.0;
+            let mut optimization = OptimizationMetrics {
+                actor_grad_clip_coefficient: 1.0,
+                critic_grad_clip_coefficient: 1.0,
+                ..OptimizationMetrics::default()
+            };
             for _ in 0..self.config.updates_per_iteration {
                 let logits = self.actor.forward(&data.states, &data.candidate_features);
                 let log_probs = masked_log_probs(&logits, &data.candidate_mask);
@@ -525,99 +397,57 @@ impl PpoTrainer {
                 let values = self.critic.forward(&data.states).squeeze_dim(1);
                 let critic_loss_tensor = values.mse_loss(&data.returns, Reduction::Mean);
 
-                actor_loss = actor_loss_tensor.double_value(&[]);
-                critic_loss = critic_loss_tensor.double_value(&[]);
-                approx_kl = (&data.old_log_probs - &current_log_probs)
+                optimization.actor_loss = actor_loss_tensor.double_value(&[]) as f32;
+                optimization.critic_loss = critic_loss_tensor.double_value(&[]) as f32;
+                optimization.approx_kl = (&data.old_log_probs - &current_log_probs)
                     .mean(Kind::Float)
-                    .double_value(&[]);
-                clip_fraction = ratio
+                    .double_value(&[]) as f32;
+                optimization.clip_fraction = ratio
                     .lt(1.0 - self.config.lower_clip_epsilon)
                     .logical_or(&ratio.gt(1.0 + self.config.upper_clip_epsilon))
                     .to_kind(Kind::Float)
                     .mean(Kind::Float)
-                    .double_value(&[]);
+                    .double_value(&[]) as f32;
 
                 self.actor_optimizer.zero_grad();
                 actor_loss_tensor.backward();
-                actor_grad_norm = gradient_norm(&self.actor_vs);
-                actor_grad_clip_coefficient =
-                    gradient_clip_coefficient(actor_grad_norm, self.config.max_grad_norm);
+                optimization.actor_grad_norm = gradient_norm(&self.actor_vs);
+                optimization.actor_grad_clip_coefficient = gradient_clip_coefficient(
+                    optimization.actor_grad_norm,
+                    self.config.max_grad_norm,
+                );
                 let actor_parameters = parameter_snapshot(&self.actor_vs);
                 self.actor_optimizer
                     .clip_grad_norm(self.config.max_grad_norm);
                 self.actor_optimizer.step();
-                actor_update_norm = parameter_update_norm(&actor_parameters, &self.actor_vs);
+                optimization.actor_update_norm =
+                    parameter_update_norm(&actor_parameters, &self.actor_vs);
 
                 self.critic_optimizer.zero_grad();
                 critic_loss_tensor.backward();
-                critic_grad_norm = gradient_norm(&self.critic_vs);
-                critic_grad_clip_coefficient =
-                    gradient_clip_coefficient(critic_grad_norm, self.config.max_grad_norm);
+                optimization.critic_grad_norm = gradient_norm(&self.critic_vs);
+                optimization.critic_grad_clip_coefficient = gradient_clip_coefficient(
+                    optimization.critic_grad_norm,
+                    self.config.max_grad_norm,
+                );
                 let critic_parameters = parameter_snapshot(&self.critic_vs);
                 self.critic_optimizer
                     .clip_grad_norm(self.config.max_grad_norm);
                 self.critic_optimizer.step();
-                critic_update_norm = parameter_update_norm(&critic_parameters, &self.critic_vs);
+                optimization.critic_update_norm =
+                    parameter_update_norm(&critic_parameters, &self.critic_vs);
             }
 
             iteration += 1;
-            on_update(&PpoMetrics {
+            let metrics = PpoMetrics::from_update(
                 iteration,
                 timesteps,
                 batch_timesteps,
-                episodes: episode_stats.len(),
-                mean_episode_return: mean_episode_metric(&episode_stats, |episode| {
-                    episode.reward_sum
-                }),
-                mean_episode_length: mean_episode_metric(&episode_stats, |episode| {
-                    episode.length as f32
-                }),
-                mean_final_score_difference: mean_episode_metric(&episode_stats, |episode| {
-                    episode.final_score_difference
-                }),
-                mean_winner_score: mean_episode_metric(&episode_stats, |episode| {
-                    episode.winner_score
-                }),
-                player_zero_win_rate: terminal_win_rate(&episode_stats),
-                average_penalties_per_game: mean_episode_array(&episode_stats, |episode| {
-                    episode.penalties
-                }),
-                average_bonus_points_per_game: mean_episode_array(&episode_stats, |episode| {
-                    episode.bonus_points
-                }),
-                average_rows_filled_per_game: mean_episode_array(&episode_stats, |episode| {
-                    episode.rows_filled
-                }),
-                average_columns_filled_per_game: mean_episode_array(&episode_stats, |episode| {
-                    episode.columns_filled
-                }),
-                average_tile_bonuses_per_game: mean_episode_array(&episode_stats, |episode| {
-                    episode.tile_bonuses
-                }),
-                actor_loss: actor_loss as f32,
-                critic_loss: critic_loss as f32,
-                actor_grad_norm,
-                critic_grad_norm,
-                actor_grad_clip_coefficient,
-                critic_grad_clip_coefficient,
-                approx_kl: approx_kl as f32,
-                clip_fraction: clip_fraction as f32,
-                return_mean: data.diagnostics.return_stats[0],
-                return_std: data.diagnostics.return_stats[1],
-                return_min: data.diagnostics.return_stats[2],
-                return_max: data.diagnostics.return_stats[3],
-                value_mean: data.diagnostics.value_stats[0],
-                value_std: data.diagnostics.value_stats[1],
-                value_min: data.diagnostics.value_stats[2],
-                value_max: data.diagnostics.value_stats[3],
-                advantage_mean: data.diagnostics.advantage_stats[0],
-                advantage_std: data.diagnostics.advantage_stats[1],
-                advantage_min: data.diagnostics.advantage_stats[2],
-                advantage_max: data.diagnostics.advantage_stats[3],
-                explained_variance: data.diagnostics.explained_variance,
-                actor_update_norm,
-                critic_update_norm,
-            });
+                &episode_stats,
+                &data.diagnostics,
+                optimization,
+            );
+            on_update(&metrics);
         }
     }
 
