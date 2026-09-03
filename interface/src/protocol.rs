@@ -1,5 +1,6 @@
 //! Command-line configuration, protocol modes, and move parsing.
 
+use crate::ProtocolFormat;
 use crate::parsing::ToAzulFEN;
 use crate::process::{EngineLaunch, EngineProcess};
 use azul_movegen::{BowlChoice, GameState, Row, Tile, game_move::Move};
@@ -432,7 +433,7 @@ pub(crate) fn play_human_uai_game(
 
     while !game.is_game_over() {
         if game.get_active_player() == human_player {
-            println!("{}", game.to_azul_fen());
+            println!("{}", game.fmt_human());
             loop {
                 print!("move> ");
                 io::Write::flush(&mut io::stdout())?;
