@@ -408,6 +408,10 @@ impl PpoTrainer {
                     .to_kind(Kind::Float)
                     .mean(Kind::Float)
                     .double_value(&[]) as f32;
+                optimization.entropy = (-(&log_probs.exp() * &log_probs)
+                    .sum_dim_intlist([-1].as_ref(), false, Kind::Float)
+                    .mean(Kind::Float))
+                .double_value(&[]) as f32;
 
                 self.actor_optimizer.zero_grad();
                 actor_loss_tensor.backward();
