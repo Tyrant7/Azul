@@ -646,33 +646,52 @@ impl PpoTrainer {
                     .collect();
                 let player = env.gamestate.get_active_player();
                 let learner_action = player == 0;
-                let action = if learner_action {
-                    sample_action(&self.actor, &self.critic, &state, &legal_candidates).0 as usize
+                let (action, old_log_prob, value) = if learner_action {
+                    let (action, old_log_prob, value) =
+                        sample_action(&self.actor, &self.critic, &state, &legal_candidates);
+                    (action as usize, old_log_prob, value)
                 } else {
                     match opponent {
                         OpponentKind::Current => {
-                            sample_action(&self.actor, &self.critic, &state, &legal_candidates).0
-                                as usize
+                            let (action, old_log_prob, value) =
+                                sample_action(&self.actor, &self.critic, &state, &legal_candidates);
+                            (action as usize, old_log_prob, value)
                         }
                         OpponentKind::Historical(index) => {
-                            sample_action(
+                            let (action, old_log_prob, value) = sample_action(
                                 &self.opponent_pool.historical[index].actor,
                                 &self.critic,
                                 &state,
                                 &legal_candidates,
-                            )
-                            .0 as usize
+                            );
+                            (action as usize, old_log_prob, value)
                         }
                         OpponentKind::Random => {
-                            legal_candidates[select_random_action(&legal_candidates)].0
+                            let action =
+                                legal_candidates[select_random_action(&legal_candidates)].0;
+                            let (old_log_prob, value) = evaluate_action(
+                                &self.actor,
+                                &self.critic,
+                                &state,
+                                &legal_candidates,
+                                action,
+                            );
+                            (action, old_log_prob, value)
                         }
                         OpponentKind::Heuristic => {
-                            legal_candidates[select_heuristic_action(&legal_candidates)].0
+                            let action =
+                                legal_candidates[select_heuristic_action(&legal_candidates)].0;
+                            let (old_log_prob, value) = evaluate_action(
+                                &self.actor,
+                                &self.critic,
+                                &state,
+                                &legal_candidates,
+                                action,
+                            );
+                            (action, old_log_prob, value)
                         }
                     }
                 };
-                let (old_log_prob, value) =
-                    evaluate_action(&self.actor, &self.critic, &state, &legal_candidates, action);
                 let result = env.step(action).expect("masked action must be legal");
                 let next_player = env.gamestate.get_active_player();
                 let next_value = if result.terminated {
