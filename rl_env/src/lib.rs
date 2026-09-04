@@ -292,7 +292,7 @@ pub fn get_device() -> tch::Device {
 /// Two-player Azul environment with a fixed action and observation interface.
 pub struct AzulEnv {
     gamestate: GameState,
-    max_steps: usize,
+    max_steps: Option<usize>,
     steps: usize,
 }
 
@@ -382,7 +382,7 @@ fn round_diagnostics(
 
 impl AzulEnv {
     /// Creates a two-player environment with a seeded, playable first round.
-    pub fn new(seed: u64, max_steps: usize) -> Self {
+    pub fn new(seed: u64, max_steps: Option<usize>) -> Self {
         let mut environment = AzulEnv {
             gamestate: GameState::new(PLAYER_COUNT, seed)
                 .expect("two-player game state must be valid"),
@@ -394,7 +394,7 @@ impl AzulEnv {
     }
 
     /// Resets the environment with an explicit seed and starts a playable round.
-    pub fn seeded_reset(&mut self, seed: u64, max_steps: usize) -> Tensor {
+    pub fn seeded_reset(&mut self, seed: u64, max_steps: Option<usize>) -> Tensor {
         self.gamestate =
             GameState::new(PLAYER_COUNT, seed).expect("two-player game state must be valid");
         self.steps = 0;
@@ -404,7 +404,7 @@ impl AzulEnv {
     }
 
     /// Resets the environment with a random seed and starts a playable round.
-    pub fn reset(&mut self, max_steps: usize) -> Tensor {
+    pub fn reset(&mut self, max_steps: Option<usize>) -> Tensor {
         self.gamestate = GameState::new(PLAYER_COUNT, rand::random())
             .expect("two-player game state must be valid");
         self.steps = 0;
@@ -424,7 +424,7 @@ impl AzulEnv {
 
     /// Returns sorted, unique canonical IDs for the currently legal actions.
     pub fn legal_actions(&self) -> Vec<usize> {
-        if self.gamestate.is_game_over() || self.steps >= self.max_steps {
+        if self.gamestate.is_game_over() || self.max_steps.is_some_and(|ms| self.steps >= ms) {
             return Vec::new();
         }
 
@@ -522,7 +522,7 @@ fn action_features_for_gamestate(
 impl AzulEnv {
     /// Applies an action, rejecting out-of-range and illegal moves without panicking.
     pub fn step(&mut self, action: usize) -> Result<StepResult, IllegalMoveError> {
-        if self.gamestate.is_game_over() || self.steps >= self.max_steps {
+        if self.gamestate.is_game_over() || self.max_steps.is_some_and(|ms| self.steps >= ms) {
             return Err(IllegalMoveError);
         }
 
@@ -588,7 +588,7 @@ impl AzulEnv {
         };
 
         let terminated = self.gamestate.is_game_over();
-        let truncated = !terminated && self.steps >= self.max_steps;
+        let truncated = !terminated && self.max_steps.is_some_and(|ms| self.steps >= ms);
 
         Ok(StepResult {
             next_state: encode_state(&self.gamestate),
@@ -713,12 +713,12 @@ mod tests {
         let second_state = state_with_factories(permuted);
         let first_environment = AzulEnv {
             gamestate: first_state,
-            max_steps: 100,
+            max_steps: Some(100),
             steps: 0,
         };
         let second_environment = AzulEnv {
             gamestate: second_state,
-            max_steps: 100,
+            max_steps: Some(100),
             steps: 0,
         };
 
@@ -784,7 +784,7 @@ mod tests {
 
     #[test]
     fn two_player_interface_dimensions_are_consistent() {
-        let environment = AzulEnv::new(1, 100);
+        let environment = AzulEnv::new(1, None);
 
         assert_eq!(FACTORY_BOWLS, 5);
         assert_eq!(BOWL_SLOTS, 6);
@@ -830,7 +830,7 @@ mod tests {
             .expect("test game state should be valid");
         let environment = AzulEnv {
             gamestate,
-            max_steps: 100,
+            max_steps: Some(100),
             steps: 0,
         };
         let factory_order = FactoryOrder::new(environment.gamestate.get_factory_bowls());
@@ -858,7 +858,7 @@ mod tests {
 
     #[test]
     fn legal_action_ids_are_sorted_and_match_the_mask() {
-        let environment = AzulEnv::new(1, 100);
+        let environment = AzulEnv::new(1, Some(100));
         let legal_actions = environment.legal_actions();
         let action_mask = environment.action_mask();
 

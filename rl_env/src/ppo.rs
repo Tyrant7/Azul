@@ -14,8 +14,6 @@ use crate::{ACTION_FEATURE_SIZE, AzulEnv, get_device};
 pub struct PpoConfig {
     /// Number of environment transitions collected before each update.
     pub timesteps_per_batch: usize,
-    /// Maximum number of transitions in one episode.
-    pub max_timesteps_per_episode: usize,
     /// Number of full-batch optimization passes over each rollout.
     pub updates_per_iteration: usize,
     /// Adam learning rate used by actor.
@@ -38,7 +36,6 @@ impl Default for PpoConfig {
     fn default() -> Self {
         Self {
             timesteps_per_batch: 1_000,
-            max_timesteps_per_episode: 1_000,
             updates_per_iteration: 4,
             actor_learning_rate: 3e-4,
             critic_learning_rate: 1e-4,
@@ -452,7 +449,6 @@ impl PpoTrainer {
     /// Creates independently parameterized actor and critic networks.
     pub fn new(config: PpoConfig) -> Result<Self, tch::TchError> {
         assert!(config.timesteps_per_batch > 0);
-        assert!(config.max_timesteps_per_episode > 0);
         assert!(config.updates_per_iteration > 0);
         assert!(config.max_grad_norm.is_finite() && config.max_grad_norm > 0.0);
         assert!(config.gamma >= 0.0 && config.gamma <= 1.0);
@@ -637,7 +633,7 @@ impl PpoTrainer {
         let mut batch = RolloutBatch::with_capacity(self.config.timesteps_per_batch);
         while batch.len() < self.config.timesteps_per_batch {
             // Rollouts are episode-complete; do not impose a mid-game action cap.
-            let mut state = env.reset(usize::MAX);
+            let mut state = env.reset(None);
             let learner_player = rand::rng().random_range(0..2);
             let opponent = self.opponent_pool.sample();
             let mut episode_return = 0.0;
@@ -990,12 +986,11 @@ mod tests {
     fn trainer_collects_a_complete_game_before_updating() {
         let config = PpoConfig {
             timesteps_per_batch: 1,
-            max_timesteps_per_episode: 1,
             updates_per_iteration: 1,
             ..PpoConfig::default()
         };
         let mut trainer = PpoTrainer::new(config).expect("trainer should initialize");
-        let mut environment = AzulEnv::new(0, config.max_timesteps_per_episode);
+        let mut environment = AzulEnv::new(0, Some(1));
 
         let mut callbacks = 0;
         let mut reported_timesteps = 0;

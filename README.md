@@ -79,7 +79,7 @@ A minimal training session can be started from Rust with:
 ```rust
 let config = rl_env::PpoConfig::default();
 let mut trainer = rl_env::PpoTrainer::new(config)?;
-let mut environment = rl_env::AzulEnv::new(0, config.max_timesteps_per_episode);
+let mut environment = rl_env::AzulEnv::new(0, None);
 trainer.train(&mut environment, 10_000);
 ```
 
