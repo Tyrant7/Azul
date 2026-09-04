@@ -1,8 +1,5 @@
 # TODO
 
-## Movegen
-- Profiling and optimization
-
 ## Interface
 - Complete UAI command dispatch with diagnostics, recovery, and tournament integration
   - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
@@ -32,14 +29,14 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 
 ### Immediate goals
 
-- Profile and optimize learning pipeline
 - Add batched and vectorized environments for parallel rollouts
 - Minibatching
 - Add greedy policy evaluations against strongest previous checkpoints and track winrate
+- Look into 1. Nextlat 2. HL Gauss
 - Deterministic reproducibility
 - Add optimizer state, scheduler state, counters, configuration, and RNG state to save/load checkpoint and make training pause/resume possible
 - Add promotion gates so new checkpoints must beat a reference agent before entering the opponent pool
-- Document everything -> esepcialyl how to play against the various engine checkpoints
+- Document everything -> esepcially how to play against the various engine checkpoints
 
 ### Longterm goals
 
