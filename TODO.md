@@ -1,8 +1,5 @@
 # TODO
 
-## Movegen
-- Profiling and optimization
-
 ## Interface
 - Complete UAI command dispatch with diagnostics, recovery, and tournament integration
   - Define the per-engine command state machine: startup, ready, new game, position, search, move response, and shutdown.
@@ -30,7 +27,6 @@
 
 ### Immediate goals
 
-- Profile and optimize learning pipeline
 - Add batched and vectorized environments for parallel rollouts
 - Minibatching
 - Add greedy policy evaluations against strongest previous checkpoints and track winrate
