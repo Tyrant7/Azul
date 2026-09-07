@@ -28,13 +28,12 @@
 ### Immediate goals
 
 - Add batched and vectorized environments for parallel rollouts
-- Minibatching
-- Add greedy policy evaluations against strongest previous checkpoints and track winrate
 - Look into 1. Nextlat 2. HL Gauss
 - Deterministic reproducibility
 - Add optimizer state, scheduler state, counters, configuration, and RNG state to save/load checkpoint and make training pause/resume possible
 - Add promotion gates so new checkpoints must beat a reference agent before entering the opponent pool
 - Document everything -> esepcially how to play against the various engine checkpoints
+- Experiment again with minibatching
 
 ### Longterm goals
 

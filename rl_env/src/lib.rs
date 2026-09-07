@@ -11,7 +11,7 @@ mod net;
 mod policy;
 pub mod ppo;
 
-pub use metrics::PpoMetrics;
+pub use metrics::{GreedyEvaluation, PpoMetrics};
 pub use policy::ActorPolicy;
 pub use ppo::{PpoConfig, PpoTrainer};
 

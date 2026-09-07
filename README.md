@@ -67,10 +67,13 @@ The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 
 The current trainer is intentionally a learning baseline rather than a full
-training system. It has no minibatches, entropy bonus, parallel rollout
-workers, checkpoint commands, or deterministic evaluation harness yet. It
-uses generalized advantage estimation and writes scalar training diagnostics
-to `runs/azul_ppo` using TensorBoard event files. See
+training system. It has no minibatches, entropy bonus, or parallel rollout
+workers. It uses generalized advantage estimation, supports optional
+deterministic greedy evaluation against the strongest historical actor
+snapshots, and writes scalar training diagnostics to `runs/azul_ppo` using
+TensorBoard event files. Set `PpoConfig::evaluation_games` above zero to enable
+evaluation; `evaluation_opponents` selects how many highest-rated snapshots are
+used. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
 

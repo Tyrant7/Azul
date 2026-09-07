@@ -92,6 +92,20 @@ impl TrainingLogger {
             .add_scalar("episode/mean_winner_score", metrics.mean_winner_score, step);
         self.writer
             .add_scalar("episode/learner_win_rate", metrics.learner_win_rate, step);
+        self.writer
+            .add_scalar("evaluation/greedy_win_rate", metrics.greedy_win_rate, step);
+        self.writer
+            .add_scalar("evaluation/games", metrics.greedy_eval_games as f32, step);
+        self.writer.add_scalar(
+            "evaluation/opponents",
+            metrics.greedy_eval_opponents as f32,
+            step,
+        );
+        self.writer.add_scalar(
+            "evaluation/strongest_opponent_rating",
+            metrics.greedy_eval_strongest_opponent_rating,
+            step,
+        );
 
         for (player, values) in [("player_zero", 0), ("player_one", 1)] {
             let penalties_tag = format!("game/{player}_average_penalties");
@@ -128,7 +142,7 @@ impl TrainingLogger {
         self.writer.flush();
 
         println!(
-            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} entropy={:.3} normalized_entropy={:.3} actor_grad={:.3} critic_grad={:.3} actor_update={:.5} critic_update={:.5} return={:.2}+-{:.2} value={:.2}+-{:.2} advantage={:.2}+-{:.2} explained_variance={:.3} score_diff={:.2} win_rate={:.3}",
+            "iteration={} timesteps={} actor_loss={:.4} critic_loss={:.4} entropy={:.3} normalized_entropy={:.3} actor_grad={:.3} critic_grad={:.3} actor_update={:.5} critic_update={:.5} return={:.2}+-{:.2} value={:.2}+-{:.2} advantage={:.2}+-{:.2} explained_variance={:.3} score_diff={:.2} win_rate={:.3} greedy_win_rate={:.3} eval_games={}",
             metrics.iteration,
             metrics.timesteps,
             metrics.actor_loss,
@@ -148,6 +162,8 @@ impl TrainingLogger {
             metrics.explained_variance,
             metrics.mean_final_score_difference,
             metrics.learner_win_rate,
+            metrics.greedy_win_rate,
+            metrics.greedy_eval_games,
         );
     }
 }
