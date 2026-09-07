@@ -73,7 +73,8 @@ deterministic greedy evaluation against the strongest historical actor
 snapshots, and writes scalar training diagnostics to `runs/azul_ppo` using
 TensorBoard event files. Set `PpoConfig::evaluation_games` above zero to enable
 evaluation; `evaluation_opponents` selects how many highest-rated snapshots are
-used. See
+used, and `evaluation_interval` controls how many PPO iterations occur between
+evaluations. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
 

@@ -54,7 +54,7 @@ impl Default for PpoConfig {
             upper_clip_epsilon: 0.28,
             evaluation_games: 0,
             evaluation_opponents: 1,
-            evaluation_interval: 1,
+            evaluation_interval: 10,
             evaluation_seed: 0xA2_55_10_01,
         }
     }
@@ -631,6 +631,13 @@ impl PpoTrainer {
             losses: games - wins,
             win_rate: wins as f32 / games as f32,
             strongest_opponent_rating,
+            current_elo: self.current_rating,
+            top_historical_elo: self
+                .opponent_pool
+                .historical
+                .iter()
+                .map(|opponent| opponent.rating)
+                .fold(f32::NEG_INFINITY, f32::max),
         }
     }
 
@@ -1215,6 +1222,8 @@ mod tests {
         assert_eq!(evaluation.opponents, 1);
         assert_eq!(evaluation.wins + evaluation.losses, evaluation.games);
         assert!((0.0..=1.0).contains(&evaluation.win_rate));
+        assert!(evaluation.current_elo.is_finite());
+        assert!(evaluation.top_historical_elo.is_finite());
     }
 
     #[test]

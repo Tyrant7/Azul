@@ -7,7 +7,7 @@ fn main() -> Result<(), tch::TchError> {
         gamma: 0.995,
         evaluation_games: 16,
         evaluation_opponents: 3,
-        evaluation_interval: 1,
+        evaluation_interval: 10,
         ..Default::default()
     };
 
