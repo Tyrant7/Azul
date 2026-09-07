@@ -17,3 +17,17 @@ executable with a descriptor such as:
 --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot tc=1+0" \
          "path=./target/debug/random_engine tc=1+0"
 ```
+
+For a human game, pair the RL engine with a `proto=human` descriptor through
+the interface executable:
+
+```bash
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "proto=human" \
+  --out ./runs/rl-game.azl
+```
+
+See the repository [playing and training guide](../README.md#playing-and-training)
+for human move notation, training commands, evaluation settings, and
+TensorBoard instructions.

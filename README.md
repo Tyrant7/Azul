@@ -97,6 +97,122 @@ cargo run -p rl_env
 tensorboard --logdir runs
 ```
 
+## Playing and training
+
+The `interface` executable is the easiest way to play a game. It accepts at
+least two engine descriptors; human players use `proto=human`, while UAI
+engines provide an executable path and a time control.
+
+### Human play
+
+Start a human-vs-human game with a reproducible opening:
+
+```bash
+cargo run -p interface -- \
+  --engine "proto=human" "proto=human" \
+  --out ./runs/manual-game.azl \
+  --seed 42
+```
+
+For human moves, enter six digits in the form `BBTTDD`:
+
+| Field | Meaning |
+| --- | --- |
+| `BB` | Wire bowl: `00` is the centre, `01` is factory 0, and so on. |
+| `TT` | Tile type, from `00` through `04`. |
+| `DD` | Destination: `00` is the floor, while `01` through `05` are wall rows 1 through 5. |
+
+For example, `040102` takes tile type 1 from factory 3 and places it on wall
+row 2. The interface prints the board after each accepted move and rejects
+malformed or illegal moves.
+
+### Play against the random engine
+
+Build the interface and baseline engine, then start a human-vs-random game:
+
+```bash
+cargo build -p interface -p random_engine
+cargo run -p interface -- \
+  --engine "path=./target/debug/random_engine proto=uai tc=60+2" \
+           "proto=human" \
+  --out ./runs/random-game.azl \
+  --seed 42
+```
+
+The order of the descriptors determines player numbers. In this example the
+random engine is player 0 and the human is player 1. Swap the descriptors to
+play first.
+
+### Play against a trained actor
+
+`rl_engine` loads an actor checkpoint and exposes it as a UAI engine. The actor
+checkpoint is sufficient for play; the critic checkpoint is used during PPO
+training and is not required by `rl_engine`.
+
+```bash
+source scripts/activate-env.sh
+cargo build -p interface -p rl_engine
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "proto=human" \
+  --out ./runs/rl-game.azl \
+  --seed 42
+```
+
+The `checkpoints/azul_actor.ot` file is the actor produced by the included
+training executable when training completes. To use another checkpoint, change
+the path after `args=`. The checkpoint path must not contain spaces because
+engine descriptors are currently whitespace-separated.
+
+You can also run two engines against each other, for example:
+
+```bash
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "path=./target/debug/random_engine proto=uai tc=1+0" \
+  --out ./runs/engine-game.azl \
+  --seed 42
+```
+
+Use `cargo run -p interface -- --help` for time controls, diagnostics, engine
+recovery, and resource-limit options.
+
+### Train a new actor
+
+The workspace training executable currently runs the PPO baseline configured
+in [`rl_env/src/main.rs`](rl_env/src/main.rs). Activate the project environment
+first so `tch` can find the local PyTorch/LibTorch installation:
+
+```bash
+source scripts/activate-env.sh
+cargo run -p rl_env
+```
+
+The run collects complete episodes, performs PPO updates, periodically evaluates
+the greedy actor against historical snapshots, and writes the final actor and
+critic to:
+
+```text
+checkpoints/azul_actor.ot
+checkpoints/azul_critic.ot
+```
+
+Training diagnostics are written under `runs/azul_ppo`. Install TensorBoard
+once if needed and view them with:
+
+```bash
+python -m pip install tensorboard
+tensorboard --logdir runs
+```
+
+The executable currently evaluates 16 games against each of the three strongest
+historical snapshots every 10 PPO iterations. Evaluation is intentionally less
+frequent than training because it can be expensive. To change the training
+length, evaluation cadence, or opponent count, edit the `PpoConfig` values in
+`rl_env/src/main.rs`. For custom applications, construct `PpoConfig` and call
+`PpoTrainer::train_with_callback` from Rust; set `evaluation_games` above zero
+to enable historical-checkpoint evaluations.
+
 ### `random_engine`
 
 [`random_engine/`](random_engine/) is a simple UAI engine that selects uniformly from the legal moves in the supplied AzulFEN position. It is useful as a baseline opponent and as a smoke-test process for the interface. It supports `uai`, `isready`, `newgame`, `position fen`, `go`, `stop`, `setoption`, and `quit`.
@@ -137,7 +253,7 @@ Run the interface help or executable with:
 
 ```bash
 cargo run -p interface -- --help
-cargo run -p interface -- --engine "path=PATH proto=human tc=60" "path=PATH proto=human tc=60"
+cargo run -p interface -- --engine "proto=human" "proto=human" --out ./runs/manual-game.azl
 ```
 
 The current CLI requires at least two `--engine` configurations. Consult [`interface/README.md`](interface/README.md) for the available configuration fields. Run the random engine with:

@@ -32,7 +32,7 @@
 - Deterministic reproducibility
 - Add optimizer state, scheduler state, counters, configuration, and RNG state to save/load checkpoint and make training pause/resume possible
 - Add promotion gates so new checkpoints must beat a reference agent before entering the opponent pool
-- Document everything -> esepcially how to play against the various engine checkpoints
+- Document checkpoint promotion and evaluation workflows as they evolve
 - Experiment again with minibatching
 
 ### Longterm goals
