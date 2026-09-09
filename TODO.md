@@ -38,6 +38,6 @@
 ### Longterm goals
 
 - Explore MCTS or AlphaZero-style search on top of the learned policy/value model.
-- Add Elo or another rating system for checkpoint and opponent-pool comparisons
+- Explore rating systems for future multi-agent arena comparisons
 - Add deterministic evaluation suites separate from stochastic training
 - Document how to reproduce a published run from a clean checkout

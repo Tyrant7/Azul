@@ -38,10 +38,8 @@ pub struct PpoConfig {
     pub lower_clip_epsilon: f64,
     /// PPO probability-ratio clipping range for advantaged actions.
     pub upper_clip_epsilon: f64,
-    /// Number of greedy evaluation games played per selected opponent; zero disables evaluation.
+    /// Number of greedy evaluation games played against the fixed reference; zero disables evaluation.
     pub evaluation_games: usize,
-    /// Number of highest-rated historical checkpoints used for evaluation.
-    pub evaluation_opponents: usize,
     /// PPO iterations between greedy evaluation runs.
     pub evaluation_interval: usize,
     /// Base seed used to make evaluation game positions reproducible.
@@ -65,7 +63,6 @@ impl Default for PpoConfig {
             lower_clip_epsilon: 0.2,
             upper_clip_epsilon: 0.28,
             evaluation_games: 0,
-            evaluation_opponents: 1,
             evaluation_interval: 10,
             evaluation_seed: 0xA2_55_10_01,
         }
@@ -319,8 +316,6 @@ enum OpponentKind {
 struct HistoricalPolicy {
     _var_store: nn::VarStore,
     actor: ActionConditionedActor,
-    rating: f32,
-    generation: usize,
 }
 
 /// Frozen actor checkpoint used as a stable evaluation reference.
@@ -328,9 +323,6 @@ struct ReferencePolicy {
     _var_store: nn::VarStore,
     actor: ActionConditionedActor,
 }
-
-const INITIAL_RATING: f32 = 1_200.0;
-const ELO_K_FACTOR: f32 = 32.0;
 
 #[derive(Default)]
 struct OpponentPool {
@@ -364,38 +356,14 @@ impl OpponentPool {
         }
     }
 
-    /// Returns historical checkpoint indexes ordered from strongest to weakest.
-    fn strongest_indices(&self, limit: usize) -> Vec<usize> {
-        let mut indexes: Vec<_> = (0..self.historical.len()).collect();
-        indexes.sort_by(|&left, &right| {
-            self.historical[right]
-                .rating
-                .total_cmp(&self.historical[left].rating)
-                .then_with(|| {
-                    self.historical[right]
-                        .generation
-                        .cmp(&self.historical[left].generation)
-                })
-        });
-        indexes.truncate(limit);
-        indexes
-    }
-
     /// Copies the current actor into the frozen historical checkpoint pool.
-    fn capture(
-        &mut self,
-        actor_vs: &nn::VarStore,
-        rating: f32,
-        generation: usize,
-    ) -> Result<(), tch::TchError> {
+    fn capture(&mut self, actor_vs: &nn::VarStore) -> Result<(), tch::TchError> {
         let mut var_store = nn::VarStore::new(get_device());
         let actor = initialize_actor(&var_store.root());
         var_store.copy(actor_vs)?;
         self.historical.push(HistoricalPolicy {
             _var_store: var_store,
             actor,
-            rating,
-            generation,
         });
         Ok(())
     }
@@ -423,14 +391,6 @@ fn select_greedy_action(
         let candidate_index = logits.argmax(-1, false).int64_value(&[0]) as usize;
         legal_candidates[candidate_index].0
     })
-}
-
-/// Updates two Elo-style ratings after a head-to-head result.
-fn update_elo_ratings(current_rating: f32, opponent_rating: f32, current_score: f32) -> (f32, f32) {
-    let expected_current =
-        1.0 / (1.0 + (10.0_f32).powf((opponent_rating - current_rating) / 400.0));
-    let delta = ELO_K_FACTOR * (current_score - expected_current);
-    (current_rating + delta, opponent_rating - delta)
 }
 
 /// Samples one legal candidate and records its old log-probability and value estimate.
@@ -547,8 +507,6 @@ pub struct PpoTrainer {
     config: PpoConfig,
     opponent_pool: OpponentPool,
     reference_actor: Option<ReferencePolicy>,
-    current_rating: f32,
-    next_generation: usize,
 }
 
 impl PpoTrainer {
@@ -569,7 +527,6 @@ impl PpoTrainer {
         assert!(config.lower_clip_epsilon > 0.0);
         assert!(config.upper_clip_epsilon > 0.0);
         assert!(config.evaluation_interval > 0);
-        assert!(config.evaluation_opponents > 0);
 
         let actor_vs = nn::VarStore::new(get_device());
         let critic_vs = nn::VarStore::new(get_device());
@@ -595,8 +552,6 @@ impl PpoTrainer {
             config,
             opponent_pool: OpponentPool::default(),
             reference_actor: None,
-            current_rating: INITIAL_RATING,
-            next_generation: 0,
         })
     }
 
@@ -649,89 +604,13 @@ impl PpoTrainer {
             wins
         };
 
-        let current_score = wins as f32 / games as f32;
-        let (current_rating, _) =
-            update_elo_ratings(self.current_rating, INITIAL_RATING, current_score);
-        self.current_rating = current_rating;
+        let win_rate = wins as f32 / games as f32;
 
         GreedyEvaluation {
             games,
-            opponents: 1,
             wins,
             losses: games - wins,
-            win_rate: current_score,
-            strongest_opponent_rating: INITIAL_RATING,
-            current_elo: self.current_rating,
-            top_historical_elo: self
-                .opponent_pool
-                .historical
-                .iter()
-                .map(|opponent| opponent.rating)
-                .fold(0.0, f32::max),
-        }
-    }
-
-    /// Evaluates the current actor greedily against the strongest prior snapshots.
-    pub fn evaluate_greedy(
-        &mut self,
-        env: &mut AzulEnv,
-        games_per_opponent: usize,
-        max_opponents: usize,
-        seed: u64,
-    ) -> GreedyEvaluation {
-        if games_per_opponent == 0 || max_opponents == 0 {
-            return GreedyEvaluation::default();
-        }
-
-        let opponent_indexes = self.opponent_pool.strongest_indices(max_opponents);
-        if opponent_indexes.is_empty() {
-            return GreedyEvaluation::default();
-        }
-
-        let strongest_opponent_rating = opponent_indexes
-            .iter()
-            .map(|&index| self.opponent_pool.historical[index].rating)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let mut wins = 0;
-        let mut games = 0;
-
-        for (opponent_rank, &opponent_index) in opponent_indexes.iter().enumerate() {
-            let opponent = &self.opponent_pool.historical[opponent_index];
-            let mut opponent_wins = 0;
-            for game_index in 0..games_per_opponent {
-                let learner_player = game_index % PLAYER_COUNT;
-                let game_seed = seed
-                    .wrapping_add((opponent_rank as u64).wrapping_mul(1_000_003))
-                    .wrapping_add(game_index as u64);
-                if self.play_greedy_game(env, &opponent.actor, learner_player, game_seed) {
-                    opponent_wins += 1;
-                }
-            }
-
-            let opponent_games = games_per_opponent;
-            let current_score = opponent_wins as f32 / opponent_games as f32;
-            let (current_rating, opponent_rating) =
-                update_elo_ratings(self.current_rating, opponent.rating, current_score);
-            self.current_rating = current_rating;
-            self.opponent_pool.historical[opponent_index].rating = opponent_rating;
-            wins += opponent_wins;
-            games += opponent_games;
-        }
-
-        GreedyEvaluation {
-            games,
-            opponents: opponent_indexes.len(),
-            wins,
-            losses: games - wins,
-            win_rate: wins as f32 / games as f32,
-            strongest_opponent_rating,
-            current_elo: self.current_rating,
-            top_historical_elo: self
-                .opponent_pool
-                .historical
-                .iter()
-                .map(|opponent| opponent.rating)
-                .fold(f32::NEG_INFINITY, f32::max),
+            win_rate,
         }
     }
 
@@ -892,12 +771,9 @@ impl PpoTrainer {
         }
     }
 
-    /// Captures the current actor with its current league rating.
+    /// Captures the current actor as a frozen training opponent.
     fn capture_current_opponent(&mut self) -> Result<(), tch::TchError> {
-        let generation = self.next_generation;
-        self.next_generation += 1;
-        self.opponent_pool
-            .capture(&self.actor_vs, self.current_rating, generation)
+        self.opponent_pool.capture(&self.actor_vs)
     }
 
     /// Plays one deterministic greedy game against a frozen actor snapshot.
@@ -1175,8 +1051,7 @@ fn compute_gae(
 #[cfg(test)]
 mod tests {
     use super::{
-        AzulEnv, HistoricalPolicy, INITIAL_RATING, OpponentKind, OpponentPool, PpoConfig,
-        PpoTrainer, compute_gae,
+        AzulEnv, HistoricalPolicy, OpponentKind, OpponentPool, PpoConfig, PpoTrainer, compute_gae,
     };
     use crate::{ActorPolicy, get_device, net::initialize_actor};
     use std::path::PathBuf;
@@ -1255,8 +1130,6 @@ mod tests {
             historical: vec![HistoricalPolicy {
                 _var_store: var_store,
                 actor,
-                rating: INITIAL_RATING,
-                generation: 0,
             }],
         };
         assert_eq!(pool.kind_for_draw(0.49, || 0), OpponentKind::Current);
@@ -1283,39 +1156,29 @@ mod tests {
     }
 
     #[test]
-    fn opponent_pool_orders_checkpoints_by_rating_then_generation() {
-        let mut pool = OpponentPool::default();
-        for generation in 0..3 {
-            let var_store = nn::VarStore::new(get_device());
-            let actor = initialize_actor(&var_store.root());
-            pool.historical.push(HistoricalPolicy {
-                _var_store: var_store,
-                actor,
-                rating: if generation == 1 { 1_100.0 } else { 1_000.0 },
-                generation,
-            });
-        }
+    fn greedy_evaluation_reports_results_against_the_reference_checkpoint() {
+        let mut actor_path = PathBuf::from(std::env::temp_dir());
+        actor_path.push(format!("azul-reference-actor-{}.ot", std::process::id()));
+        let mut critic_path = PathBuf::from(std::env::temp_dir());
+        critic_path.push(format!("azul-reference-critic-{}.ot", std::process::id()));
 
-        assert_eq!(pool.strongest_indices(3), vec![1, 2, 0]);
-        assert_eq!(pool.strongest_indices(2), vec![1, 2]);
-    }
-
-    #[test]
-    fn greedy_evaluation_reports_results_against_a_historical_checkpoint() {
         let mut trainer = PpoTrainer::new(PpoConfig::default()).expect("trainer should initialize");
         trainer
-            .add_historical_opponent()
-            .expect("historical copy should initialize");
+            .save_checkpoints(&actor_path, &critic_path)
+            .expect("reference checkpoint should save");
+        trainer
+            .set_reference_actor(&actor_path)
+            .expect("reference checkpoint should load");
         let mut environment = AzulEnv::new(0, None);
 
-        let evaluation = trainer.evaluate_greedy(&mut environment, 1, 1, 42);
+        let evaluation = trainer.evaluate_greedy_against_reference(&mut environment, 1, 42);
 
         assert_eq!(evaluation.games, 1);
-        assert_eq!(evaluation.opponents, 1);
         assert_eq!(evaluation.wins + evaluation.losses, evaluation.games);
         assert!((0.0..=1.0).contains(&evaluation.win_rate));
-        assert!(evaluation.current_elo.is_finite());
-        assert!(evaluation.top_historical_elo.is_finite());
+
+        std::fs::remove_file(actor_path).expect("reference actor checkpoint should be removable");
+        std::fs::remove_file(critic_path).expect("critic checkpoint should be removable");
     }
 
     #[test]

@@ -97,23 +97,6 @@ impl TrainingLogger {
                 .add_scalar("evaluation/greedy_win_rate", metrics.greedy_win_rate, step);
             self.writer
                 .add_scalar("evaluation/games", metrics.greedy_eval_games as f32, step);
-            self.writer.add_scalar(
-                "evaluation/opponents",
-                metrics.greedy_eval_opponents as f32,
-                step,
-            );
-            self.writer.add_scalar(
-                "evaluation/strongest_opponent_rating",
-                metrics.greedy_eval_strongest_opponent_rating,
-                step,
-            );
-            self.writer
-                .add_scalar("evaluation/current_elo", metrics.greedy_current_elo, step);
-            self.writer.add_scalar(
-                "evaluation/top_historical_elo",
-                metrics.greedy_top_historical_elo,
-                step,
-            );
         }
 
         for (player, values) in [("player_zero", 0), ("player_one", 1)] {
@@ -152,11 +135,8 @@ impl TrainingLogger {
 
         let evaluation_summary = if metrics.greedy_eval_games > 0 {
             format!(
-                " greedy_win_rate={:.3} current_elo={:.1} top_elo={:.1} eval_games={}",
-                metrics.greedy_win_rate,
-                metrics.greedy_current_elo,
-                metrics.greedy_top_historical_elo,
-                metrics.greedy_eval_games,
+                " greedy_win_rate={:.3} eval_games={}",
+                metrics.greedy_win_rate, metrics.greedy_eval_games,
             )
         } else {
             String::new()

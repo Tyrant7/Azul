@@ -1,16 +1,12 @@
 use crate::ppo::{EpisodeStats, RolloutDiagnostics};
 
-/// Aggregate result from greedy games against historical checkpoints.
+/// Aggregate result from greedy games against the fixed evaluation reference.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GreedyEvaluation {
     pub games: usize,
-    pub opponents: usize,
     pub wins: usize,
     pub losses: usize,
     pub win_rate: f32,
-    pub strongest_opponent_rating: f32,
-    pub current_elo: f32,
-    pub top_historical_elo: f32,
 }
 
 /// Scalar diagnostics emitted after each PPO rollout and update iteration.
@@ -27,10 +23,6 @@ pub struct PpoMetrics {
     pub learner_win_rate: f32,
     pub greedy_win_rate: f32,
     pub greedy_eval_games: usize,
-    pub greedy_eval_opponents: usize,
-    pub greedy_eval_strongest_opponent_rating: f32,
-    pub greedy_current_elo: f32,
-    pub greedy_top_historical_elo: f32,
     pub average_penalties_per_game: [f32; 2],
     pub average_bonus_points_per_game: [f32; 2],
     pub average_rows_filled_per_game: [f32; 2],
@@ -103,10 +95,6 @@ impl PpoMetrics {
             learner_win_rate: terminal_win_rate(episodes),
             greedy_win_rate: evaluation.win_rate,
             greedy_eval_games: evaluation.games,
-            greedy_eval_opponents: evaluation.opponents,
-            greedy_eval_strongest_opponent_rating: evaluation.strongest_opponent_rating,
-            greedy_current_elo: evaluation.current_elo,
-            greedy_top_historical_elo: evaluation.top_historical_elo,
             average_penalties_per_game: mean_episode_array(episodes, |episode| episode.penalties),
             average_bonus_points_per_game: mean_episode_array(episodes, |episode| {
                 episode.bonus_points
