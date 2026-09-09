@@ -1,7 +1,7 @@
 //! Neural-network definitions used by the reinforcement-learning trainer.
 
 use tch::{
-    Tensor,
+    Kind, Tensor,
     nn::{self, Module},
 };
 
@@ -117,11 +117,62 @@ impl StateEncoder {
 pub struct ResNetwork {
     encoder: StateEncoder,
     head: nn::Linear,
+    value_min: f64,
+    value_max: f64,
+    value_bins: i64,
+    bin_width: f64,
+    sigma: f64,
 }
 
 impl Module for ResNetwork {
     fn forward(&self, xs: &Tensor) -> Tensor {
         self.head.forward(&self.encoder.forward(xs))
+    }
+}
+
+impl ResNetwork {
+    /// Decodes categorical value logits into scalar expectations over the support.
+    pub fn decode_values(&self, logits: &Tensor) -> Tensor {
+        let atoms = self.support_atoms(logits.device());
+        (logits.softmax(-1, Kind::Float) * atoms).sum_dim_intlist([-1].as_ref(), false, Kind::Float)
+    }
+
+    /// Runs the critic and decodes its categorical output into scalar values.
+    pub fn values(&self, states: &Tensor) -> Tensor {
+        let logits = <Self as Module>::forward(self, states);
+        self.decode_values(&logits)
+    }
+
+    /// Computes cross-entropy against Gaussian-smoothed scalar return targets.
+    pub fn hl_gauss_loss(&self, logits: &Tensor, targets: &Tensor) -> Tensor {
+        let target_distribution = self.target_distribution(targets, logits.device());
+        let log_probs = logits.log_softmax(-1, Kind::Float);
+        -(target_distribution * log_probs)
+            .sum_dim_intlist([-1].as_ref(), false, Kind::Float)
+            .mean(Kind::Float)
+    }
+
+    /// Builds the normalized Gaussian mass assigned to each support bin.
+    fn target_distribution(&self, targets: &Tensor, device: tch::Device) -> Tensor {
+        let target = targets.clamp(self.value_min, self.value_max).unsqueeze(-1);
+        let atoms = self.support_atoms(device);
+        let lower = &atoms - self.bin_width / 2.0;
+        let upper = &atoms + self.bin_width / 2.0;
+        let scale = self.sigma * 2.0_f64.sqrt();
+        let lower_cdf = (((&lower - &target) / scale).erf() + 1.0) * 0.5;
+        let upper_cdf = (((&upper - &target) / scale).erf() + 1.0) * 0.5;
+        let masses = (upper_cdf - lower_cdf).clamp_min(1e-12);
+        &masses / masses.sum_dim_intlist([-1].as_ref(), true, Kind::Float)
+    }
+
+    /// Returns evenly spaced support atoms on the requested device.
+    fn support_atoms(&self, device: tch::Device) -> Tensor {
+        Tensor::linspace(
+            self.value_min,
+            self.value_max,
+            self.value_bins,
+            (Kind::Float, device),
+        )
     }
 }
 
@@ -175,9 +226,58 @@ pub fn initialize_actor(vs: &nn::Path) -> ActionConditionedActor {
 }
 
 /// Builds a value network whose output estimates the current state value.
-pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
+pub fn initialize_critic(
+    vs: &nn::Path,
+    value_bins: usize,
+    value_min: f32,
+    value_max: f32,
+    sigma_ratio: f32,
+) -> ResNetwork {
+    assert!(value_bins >= 2);
+    assert!(value_min.is_finite() && value_max.is_finite() && value_min < value_max);
+    assert!(sigma_ratio.is_finite() && sigma_ratio > 0.0);
+    let bin_width = (value_max as f64 - value_min as f64) / (value_bins - 1) as f64;
     ResNetwork {
         encoder: StateEncoder::new(vs),
-        head: head_linear(vs / "head", HIDDEN, 1),
+        head: head_linear(vs / "head", HIDDEN, value_bins as i64),
+        value_min: value_min as f64,
+        value_max: value_max as f64,
+        value_bins: value_bins as i64,
+        bin_width,
+        sigma: sigma_ratio as f64 * bin_width,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::initialize_critic;
+    use crate::get_device;
+    use tch::{Kind, Tensor, nn};
+
+    #[test]
+    fn hl_gauss_targets_are_normalized() {
+        let var_store = nn::VarStore::new(get_device());
+        let critic = initialize_critic(&var_store.root(), 5, -2.0, 2.0, 0.5);
+        let targets = Tensor::from_slice(&[-2.0_f32, 0.0, 2.0]).to_device(get_device());
+        let logits = Tensor::zeros([3, 5], (Kind::Float, get_device()));
+        let distribution = critic.target_distribution(&targets, get_device());
+        let loss = critic.hl_gauss_loss(&logits, &targets);
+
+        assert!(loss.isfinite().all().int64_value(&[]) != 0);
+        for row in 0..3 {
+            let sum = distribution.get(row).sum(Kind::Float).double_value(&[]);
+            assert!((sum - 1.0).abs() < 1e-6);
+        }
+        assert_eq!(distribution.argmax(-1, false).int64_value(&[1]), 2);
+    }
+
+    #[test]
+    fn uniform_logits_decode_to_the_support_midpoint() {
+        let var_store = nn::VarStore::new(get_device());
+        let critic = initialize_critic(&var_store.root(), 5, -2.0, 2.0, 0.5);
+        let logits = Tensor::zeros([1, 5], (Kind::Float, get_device()));
+        let value = critic.decode_values(&logits).double_value(&[0]);
+
+        assert!(value.abs() < 1e-6);
     }
 }
