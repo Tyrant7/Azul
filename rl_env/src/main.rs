@@ -6,14 +6,14 @@ fn main() -> Result<(), tch::TchError> {
         updates_per_iteration: 5,
         gamma: 0.995,
         evaluation_games: 16,
-        evaluation_opponents: 3,
         evaluation_interval: 10,
         ..Default::default()
     };
 
     let mut trainer = rl_env::PpoTrainer::new(config)?;
+    trainer.set_reference_actor("checkpoints/reference_actor.ot")?;
     let mut environment = rl_env::AzulEnv::new(0, None);
-    let mut logger = logging::TrainingLogger::new("camf_spl_LR_stab_league");
+    let mut logger = logging::TrainingLogger::new("full_league");
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));

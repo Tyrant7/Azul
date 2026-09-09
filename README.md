@@ -69,12 +69,11 @@ installation; the rules and interface crates can be tested independently.
 The current trainer is intentionally a learning baseline rather than a full
 training system. It has no minibatches, entropy bonus, or parallel rollout
 workers. It uses generalized advantage estimation, supports optional
-deterministic greedy evaluation against the strongest historical actor
-snapshots, and writes scalar training diagnostics to `runs/azul_ppo` using
-TensorBoard event files. Set `PpoConfig::evaluation_games` above zero to enable
-evaluation; `evaluation_opponents` selects how many highest-rated snapshots are
-used, and `evaluation_interval` controls how many PPO iterations occur between
-evaluations. See
+deterministic greedy evaluation against a frozen reference actor, and writes
+scalar training diagnostics to `runs/azul_ppo` using TensorBoard event files.
+Set `PpoConfig::evaluation_games` above zero and configure a reference actor to
+enable evaluation; `evaluation_interval` controls how many PPO iterations occur
+between evaluations. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
 
@@ -189,13 +188,24 @@ cargo run -p rl_env
 ```
 
 The run collects complete episodes, performs PPO updates, periodically evaluates
-the greedy actor against historical snapshots, and writes the final actor and
-critic to:
+the greedy actor against a frozen reference actor, and writes the final actor
+and critic to:
 
 ```text
 checkpoints/azul_actor.ot
 checkpoints/azul_critic.ot
 ```
+
+Before starting training, place the completed actor checkpoint used as the
+stable baseline at:
+
+```text
+checkpoints/reference_actor.ot
+```
+
+The training executable loads this file but does not create or overwrite it.
+Keep it unchanged if you want evaluation results to remain comparable across
+runs.
 
 Training diagnostics are written under `runs/azul_ppo`. Install TensorBoard
 once if needed and view them with:
@@ -205,13 +215,13 @@ python -m pip install tensorboard
 tensorboard --logdir runs
 ```
 
-The executable currently evaluates 16 games against each of the three strongest
-historical snapshots every 10 PPO iterations. Evaluation is intentionally less
-frequent than training because it can be expensive. To change the training
-length, evaluation cadence, or opponent count, edit the `PpoConfig` values in
-`rl_env/src/main.rs`. For custom applications, construct `PpoConfig` and call
-`PpoTrainer::train_with_callback` from Rust; set `evaluation_games` above zero
-to enable historical-checkpoint evaluations.
+The executable currently evaluates 16 games against the fixed reference every
+10 PPO iterations. Evaluation is intentionally less frequent than training
+because it can be expensive. To change the training length or evaluation
+cadence, edit the `PpoConfig` values in `rl_env/src/main.rs`. For custom
+applications, call `PpoTrainer::set_reference_actor` before
+`PpoTrainer::train_with_callback`; set `evaluation_games` above zero to enable
+evaluation.
 
 ### `random_engine`
 

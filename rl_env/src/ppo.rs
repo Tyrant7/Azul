@@ -311,7 +311,13 @@ struct HistoricalPolicy {
     generation: usize,
 }
 
-const INITIAL_RATING: f32 = 1_000.0;
+/// Frozen actor checkpoint used as a stable evaluation reference.
+struct ReferencePolicy {
+    _var_store: nn::VarStore,
+    actor: ActionConditionedActor,
+}
+
+const INITIAL_RATING: f32 = 1_200.0;
 const ELO_K_FACTOR: f32 = 32.0;
 
 #[derive(Default)]
@@ -528,6 +534,7 @@ pub struct PpoTrainer {
     critic_optimizer: nn::Optimizer,
     config: PpoConfig,
     opponent_pool: OpponentPool,
+    reference_actor: Option<ReferencePolicy>,
     current_rating: f32,
     next_generation: usize,
 }
@@ -562,6 +569,7 @@ impl PpoTrainer {
             critic_optimizer,
             config,
             opponent_pool: OpponentPool::default(),
+            reference_actor: None,
             current_rating: INITIAL_RATING,
             next_generation: 0,
         })
@@ -575,6 +583,67 @@ impl PpoTrainer {
     /// Returns the number of frozen historical opponents in the pool.
     pub fn historical_opponent_count(&self) -> usize {
         self.opponent_pool.historical.len()
+    }
+
+    /// Loads a frozen actor checkpoint for stable evaluation across training.
+    pub fn set_reference_actor<P: AsRef<Path>>(&mut self, path: P) -> Result<(), tch::TchError> {
+        let mut var_store = nn::VarStore::new(get_device());
+        let actor = initialize_actor(&var_store.root());
+        var_store.load(path)?;
+        self.reference_actor = Some(ReferencePolicy {
+            _var_store: var_store,
+            actor,
+        });
+        Ok(())
+    }
+
+    /// Evaluates the current actor greedily against the fixed reference actor.
+    pub fn evaluate_greedy_against_reference(
+        &mut self,
+        env: &mut AzulEnv,
+        games: usize,
+        seed: u64,
+    ) -> GreedyEvaluation {
+        if games == 0 || self.reference_actor.is_none() {
+            return GreedyEvaluation::default();
+        }
+
+        let wins = {
+            let reference = self
+                .reference_actor
+                .as_ref()
+                .expect("reference actor presence was checked");
+            let mut wins = 0;
+            for game_index in 0..games {
+                let learner_player = game_index % PLAYER_COUNT;
+                let game_seed = seed.wrapping_add(game_index as u64);
+                if self.play_greedy_game(env, &reference.actor, learner_player, game_seed) {
+                    wins += 1;
+                }
+            }
+            wins
+        };
+
+        let current_score = wins as f32 / games as f32;
+        let (current_rating, _) =
+            update_elo_ratings(self.current_rating, INITIAL_RATING, current_score);
+        self.current_rating = current_rating;
+
+        GreedyEvaluation {
+            games,
+            opponents: 1,
+            wins,
+            losses: games - wins,
+            win_rate: current_score,
+            strongest_opponent_rating: INITIAL_RATING,
+            current_elo: self.current_rating,
+            top_historical_elo: self
+                .opponent_pool
+                .historical
+                .iter()
+                .map(|opponent| opponent.rating)
+                .fold(0.0, f32::max),
+        }
     }
 
     /// Evaluates the current actor greedily against the strongest prior snapshots.
@@ -772,10 +841,9 @@ impl PpoTrainer {
             let evaluation = if self.config.evaluation_games > 0
                 && iteration % self.config.evaluation_interval == 0
             {
-                self.evaluate_greedy(
+                self.evaluate_greedy_against_reference(
                     env,
                     self.config.evaluation_games,
-                    self.config.evaluation_opponents,
                     self.config.evaluation_seed.wrapping_add(iteration as u64),
                 )
             } else {
@@ -1269,6 +1337,11 @@ mod tests {
         trainer
             .save_checkpoints(&actor_path, &critic_path)
             .expect("checkpoints should save");
+        let mut reference_trainer =
+            PpoTrainer::new(PpoConfig::default()).expect("reference trainer should initialize");
+        reference_trainer
+            .set_reference_actor(&actor_path)
+            .expect("reference actor checkpoint should load");
         ActorPolicy::load(&actor_path).expect("actor checkpoint should load");
 
         std::fs::remove_file(actor_path).expect("actor checkpoint should be removable");
