@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use rand::RngExt;
-use tch::{Kind, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
+use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
 
 use crate::metrics::{GreedyEvaluation, OptimizationMetrics, PpoMetrics};
 use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
@@ -20,14 +20,6 @@ pub struct PpoConfig {
     pub actor_learning_rate: f64,
     /// Adam learning rate used by critic.
     pub critic_learning_rate: f64,
-    /// Lowest fixed value represented by the categorical critic support.
-    pub critic_value_min: f32,
-    /// Highest fixed value represented by the categorical critic support.
-    pub critic_value_max: f32,
-    /// Number of categorical value-support atoms emitted by the critic.
-    pub critic_value_bins: usize,
-    /// Gaussian target width as a multiple of the support-bin width.
-    pub critic_sigma_ratio: f32,
     /// Maximum global L2 norm applied to actor and critic gradients.
     pub max_grad_norm: f64,
     /// Discount factor used for return and advantage estimates.
@@ -53,10 +45,6 @@ impl Default for PpoConfig {
             updates_per_iteration: 4,
             actor_learning_rate: 3e-4,
             critic_learning_rate: 1e-4,
-            critic_value_min: -20.0,
-            critic_value_max: 20.0,
-            critic_value_bins: 101,
-            critic_sigma_ratio: 0.5,
             max_grad_norm: 0.5,
             gamma: 0.99,
             lambda: 0.95,
@@ -425,7 +413,7 @@ fn sample_action(
             .gather(1, &candidate, false)
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
-        let value = critic.values(&state).double_value(&[0]) as f32;
+        let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
         (
             legal_candidates[candidate_index].0 as i64,
             old_log_prob,
@@ -466,7 +454,7 @@ fn evaluate_action(
             .gather(1, &action_tensor, false)
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
-        let value = critic.values(&state).double_value(&[0]) as f32;
+        let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
         (old_log_prob, value)
     })
 }
@@ -515,13 +503,6 @@ impl PpoTrainer {
         assert!(config.timesteps_per_batch > 0);
         assert!(config.updates_per_iteration > 0);
         assert!(config.max_grad_norm.is_finite() && config.max_grad_norm > 0.0);
-        assert!(
-            config.critic_value_min.is_finite()
-                && config.critic_value_max.is_finite()
-                && config.critic_value_min < config.critic_value_max
-        );
-        assert!(config.critic_value_bins >= 2);
-        assert!(config.critic_sigma_ratio.is_finite() && config.critic_sigma_ratio > 0.0);
         assert!(config.gamma >= 0.0 && config.gamma <= 1.0);
         assert!(config.lambda >= 0.0 && config.lambda <= 1.0);
         assert!(config.lower_clip_epsilon > 0.0);
@@ -531,13 +512,7 @@ impl PpoTrainer {
         let actor_vs = nn::VarStore::new(get_device());
         let critic_vs = nn::VarStore::new(get_device());
         let actor = initialize_actor(&actor_vs.root());
-        let critic = initialize_critic(
-            &critic_vs.root(),
-            config.critic_value_bins,
-            config.critic_value_min,
-            config.critic_value_max,
-            config.critic_sigma_ratio,
-        );
+        let critic = initialize_critic(&critic_vs.root());
         let actor_optimizer = nn::Adam::default().build(&actor_vs, config.actor_learning_rate)?;
         let critic_optimizer =
             nn::Adam::default().build(&critic_vs, config.critic_learning_rate)?;
@@ -676,8 +651,8 @@ impl PpoTrainer {
                     .sum(Kind::Float)
                     / &learner_count;
 
-                let critic_logits = self.critic.forward(&data.states);
-                let critic_loss_tensor = self.critic.hl_gauss_loss(&critic_logits, &data.returns);
+                let values = self.critic.forward(&data.states).squeeze_dim(1);
+                let critic_loss_tensor = values.mse_loss(&data.returns, Reduction::Mean);
 
                 optimization.actor_loss = actor_loss_tensor.double_value(&[]) as f32;
                 optimization.critic_loss = critic_loss_tensor.double_value(&[]) as f32;
@@ -882,7 +857,8 @@ impl PpoTrainer {
                 } else {
                     no_grad(|| {
                         self.critic
-                            .values(&result.next_state.unsqueeze(0))
+                            .forward(&result.next_state.unsqueeze(0))
+                            .squeeze_dim(1)
                             .double_value(&[0]) as f32
                     })
                 };
