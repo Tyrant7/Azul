@@ -5,8 +5,8 @@ const FINAL_EVALUATION_GAMES: usize = 500;
 fn main() -> Result<(), tch::TchError> {
     let config = rl_env::PpoConfig {
         timesteps_per_batch: 1_000,
-        updates_per_iteration: 5,
-        gamma: 0.995,
+        updates_per_iteration: 4,
+        gamma: 0.99,
         evaluation_games: 16,
         evaluation_interval: 10,
         ..Default::default()
@@ -15,7 +15,7 @@ fn main() -> Result<(), tch::TchError> {
     let mut trainer = rl_env::PpoTrainer::new(config)?;
     trainer.set_reference_actor("checkpoints/reference_actor.ot")?;
     let mut environment = rl_env::AzulEnv::new(0, None);
-    let mut logger = logging::TrainingLogger::new("full_league_MSE");
+    let mut logger = logging::TrainingLogger::new("full_league_HL_Gauss_opt");
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));

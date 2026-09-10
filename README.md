@@ -63,8 +63,11 @@ factory bowls, and the two-player wire action space contains six source slots
 policy scores state/action pairs and normalizes a categorical distribution over
 the currently legal candidates; the fixed 180-action IDs remain the boundary
 used by `step` and action masks.
-The critic uses a scalar value head trained with mean squared error against
-the return targets used by GAE and PPO.
+The critic uses an HL-Gauss categorical value head: it predicts probabilities
+over a fixed value support, trains against Gaussian-smoothed return targets,
+and decodes the expected support value for GAE and PPO. The support and target
+width are configurable through `critic_value_min`, `critic_value_max`,
+`critic_value_bins`, and `critic_sigma_ratio` in `PpoConfig`.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 
