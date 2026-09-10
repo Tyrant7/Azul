@@ -1,5 +1,7 @@
 mod logging;
 
+const FINAL_EVALUATION_GAMES: usize = 500;
+
 fn main() -> Result<(), tch::TchError> {
     let config = rl_env::PpoConfig {
         timesteps_per_batch: 1_000,
@@ -17,6 +19,18 @@ fn main() -> Result<(), tch::TchError> {
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));
+    let final_evaluation = trainer.evaluate_greedy_against_reference(
+        &mut environment,
+        FINAL_EVALUATION_GAMES,
+        config.evaluation_seed.wrapping_add(1_000_000),
+    );
+    println!(
+        "final_evaluation games={} wins={} losses={} win_rate={:.3}",
+        final_evaluation.games,
+        final_evaluation.wins,
+        final_evaluation.losses,
+        final_evaluation.win_rate,
+    );
     std::fs::create_dir_all("checkpoints").expect("checkpoint directory should be creatable");
     trainer.save_checkpoints("checkpoints/azul_actor.ot", "checkpoints/azul_critic.ot")?;
     Ok(())

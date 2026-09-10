@@ -217,13 +217,15 @@ python -m pip install tensorboard
 tensorboard --logdir runs
 ```
 
-The executable currently evaluates 16 games against the fixed reference every
-10 PPO iterations. Evaluation is intentionally less frequent than training
-because it can be expensive. To change the training length or evaluation
-cadence, edit the `PpoConfig` values in `rl_env/src/main.rs`. For custom
-applications, call `PpoTrainer::set_reference_actor` before
-`PpoTrainer::train_with_callback`; set `evaluation_games` above zero to enable
-evaluation.
+The executable evaluates 16 games against the fixed reference every 10 PPO
+iterations, then runs a final 500-game evaluation after training completes.
+The final evaluation is printed as `final_evaluation` and is the preferred
+win-rate comparison between training runs. Evaluation is intentionally less
+frequent than training because it can be expensive. To change the training
+length, periodic evaluation cadence, or final evaluation size, edit the values
+in `rl_env/src/main.rs`. For custom applications, call
+`PpoTrainer::set_reference_actor` before `PpoTrainer::train_with_callback`;
+set `evaluation_games` above zero to enable periodic evaluation.
 
 ### `random_engine`
 
