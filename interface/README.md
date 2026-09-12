@@ -23,10 +23,13 @@ is a quoted, whitespace-separated list of `key=value` fields:
 cargo run -p interface -- \
   --engine "path=./target/debug/random_engine proto=uai tc=60+5" \
            "path=./target/debug/random_engine proto=uai tc=60+5" \
-  --tournament round-robin \
-  --games 10 \
-  --out ./results.azl
+  --out ./runs/interface-game.azl \
+  --seed 42
 ```
+
+This starts one game. Tournament and repetition options are parsed for the
+planned scheduler, but the current executable does not schedule multiple
+games yet.
 
 The descriptor parser currently splits on whitespace and does not provide an
 escaping or nested-quoting syntax. Quote the complete descriptor for the

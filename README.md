@@ -223,12 +223,22 @@ tensorboard --logdir runs
 The executable evaluates 16 games against the fixed reference every 10 PPO
 iterations, then runs a final 500-game evaluation after training completes.
 The final evaluation is printed as `final_evaluation` and is the preferred
-win-rate comparison between training runs. Evaluation is intentionally less
-frequent than training because it can be expensive. To change the training
-length, periodic evaluation cadence, or final evaluation size, edit the values
-in `rl_env/src/main.rs`. For custom applications, call
+win-rate comparison between training runs; it is printed to the terminal and
+is not currently added to TensorBoard. Periodic evaluation results are written
+to TensorBoard under `evaluation/greedy_win_rate` and `evaluation/games`.
+Evaluation is intentionally less frequent than training because it can be
+expensive. To change the training length, periodic evaluation cadence, or
+final evaluation size, edit the values in `rl_env/src/main.rs`. For custom
+applications, call
 `PpoTrainer::set_reference_actor` before `PpoTrainer::train_with_callback`;
 set `evaluation_games` above zero to enable periodic evaluation.
+
+The current executable uses 1,000 rollout transitions, four full-batch PPO
+passes, and `gamma = 0.99`. The current HL-Gauss defaults are a value support
+of `[-6.5, 6.5]`, 128 bins, and `critic_sigma_ratio = 1.0`; the actor learning
+rate defaults to `3e-4` and the critic learning rate to `2e-4`. These
+experimental values are defined in [`rl_env/src/main.rs`](rl_env/src/main.rs) and
+[`rl_env/src/ppo.rs`](rl_env/src/ppo.rs).
 
 ### `random_engine`
 
