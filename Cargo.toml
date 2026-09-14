@@ -5,5 +5,6 @@ members = [
     "random_engine", 
     "rl_env",
     "rl_engine",
+    "rl_beam",
 ]
 resolver = "3"

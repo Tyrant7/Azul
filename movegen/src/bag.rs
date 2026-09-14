@@ -8,6 +8,14 @@ pub struct Bag<T> {
     items: Vec<T>,
 }
 
+impl<T: Clone> Clone for Bag<T> {
+    fn clone(&self) -> Self {
+        Self {
+            items: self.items.clone(),
+        }
+    }
+}
+
 impl<T> Bag<T> {
     /// Creates a bag containing `items` in random order.
     pub fn new<R: Rng + ?Sized>(mut items: Vec<T>, rng: &mut R) -> Self {

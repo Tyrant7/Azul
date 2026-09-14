@@ -10,6 +10,7 @@ azul/
 ├── interface/       CLI, UAI direction, move parsing, and AzulFEN I/O
 ├── random_engine/   Random legal-move UAI engine
 ├── rl_env/          Two-player reinforcement-learning environment
+├── rl_beam/         Policy-prior beam-search UAI engine and matchup tool
 ├── Cargo.toml       Workspace definition
 └── TODO.md          Development and reinforcement-learning roadmap
 ```
@@ -81,6 +82,14 @@ enable evaluation; `evaluation_interval` controls how many PPO iterations occur
 between evaluations. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
+
+### `rl_beam`
+
+[`rl_beam/`](rl_beam/) exposes the trained actor through UAI with a basic
+policy-prior beam search. It also provides a direct matchup binary for
+comparing greedy and beam policies over reproducibly seeded games. The beam
+search currently uses actor log-probabilities only; it does not use the critic
+or perform minimax search. See [`rl_beam/README.md`](rl_beam/README.md).
 
 A minimal training session can be started from Rust with:
 
@@ -176,6 +185,25 @@ cargo run -p interface -- \
            "path=./target/debug/random_engine proto=uai tc=1+0" \
   --out ./runs/engine-game.azl \
   --seed 42
+```
+
+To run the beam engine instead, use `rl_beam` and optionally pass the beam
+width and depth after the checkpoint path:
+
+```bash
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_beam args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "proto=human" \
+  --out ./runs/beam-game.azl \
+  --seed 42
+```
+
+For a direct 1,000-game greedy-versus-beam comparison using the same actor
+checkpoint:
+
+```bash
+cargo run -p rl_beam --bin matchup -- \
+  checkpoints/azul_actor.ot 1000 4 2
 ```
 
 Use `cargo run -p interface -- --help` for time controls, diagnostics, engine
