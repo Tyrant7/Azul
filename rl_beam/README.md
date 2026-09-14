@@ -3,9 +3,15 @@
 `rl_beam` exposes the fixed reference actor through the interface crate's UAI
 runtime. The actor generates candidate moves, while the matching reference
 critic evaluates search states from the root player's perspective. The critic
-may be scalar MSE or categorical; the loader detects the checkpoint head shape.
+is a scalar MSE value network.
 Opponent layers retain lower-valued states and root-player layers retain
 higher-valued states as a basic alternating beam search.
+
+The actor's candidate representation includes the concrete five-by-five wall
+cell where a tile would be placed. This lets a newly trained actor distinguish
+otherwise similar destination rows by their spatial consequences. Existing
+actor checkpoints remain loadable with zero-initialized spatial weights, but
+must be retrained before they can benefit from this input.
 
 ## Play against the beam engine
 

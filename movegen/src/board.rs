@@ -302,7 +302,7 @@ impl Board {
     /// - 4 0 1 2 3
     /// - 3 4 0 1 2
     /// - ...
-    fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
+    pub fn get_tile_place_col(tile_type: Tile, row_idx: usize) -> usize {
         (tile_type + row_idx) % BOARD_DIMENSION
     }
 

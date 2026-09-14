@@ -9,66 +9,23 @@ use crate::get_device;
 use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
 use crate::{ACTION_FEATURE_SIZE, encode_state, legal_move_features};
 
-const DEFAULT_CRITIC_VALUE_MIN: f32 = -6.5;
-const DEFAULT_CRITIC_VALUE_MAX: f32 = 6.5;
-const DEFAULT_CRITIC_VALUE_BINS: usize = 128;
-const DEFAULT_CRITIC_SIGMA_RATIO: f32 = 1.0;
-
 /// A trained actor loaded for inference without PPO optimizer state.
 pub struct ActorPolicy {
     var_store: nn::VarStore,
     actor: ActionConditionedActor,
 }
 
-/// A trained scalar or HL-Gauss critic loaded for inference.
+/// A trained scalar critic loaded for inference.
 pub struct CriticPolicy {
     _var_store: nn::VarStore,
     critic: ResNetwork,
 }
 
 impl CriticPolicy {
-    /// Loads a critic checkpoint, inferring scalar versus categorical output.
+    /// Loads a scalar critic checkpoint.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, tch::TchError> {
-        let value_bins =
-            tch::Tensor::load_multi_with_device(&path, tch::Device::Cpu).and_then(|variables| {
-                variables
-                    .into_iter()
-                    .find(|(name, _)| name == "head.weight")
-                    .and_then(|(_, tensor)| tensor.size().first().copied())
-                    .map(|bins| {
-                        usize::try_from(bins).map_err(|_| {
-                            tch::TchError::Kind(format!(
-                                "critic checkpoint has invalid bin count: {bins}"
-                            ))
-                        })
-                    })
-                    .unwrap_or(Ok(DEFAULT_CRITIC_VALUE_BINS))
-            })?;
-        Self::load_with_support(
-            path,
-            value_bins,
-            DEFAULT_CRITIC_VALUE_MIN,
-            DEFAULT_CRITIC_VALUE_MAX,
-            DEFAULT_CRITIC_SIGMA_RATIO,
-        )
-    }
-
-    /// Loads a critic checkpoint with explicit HL-Gauss support parameters.
-    pub fn load_with_support<P: AsRef<Path>>(
-        path: P,
-        value_bins: usize,
-        value_min: f32,
-        value_max: f32,
-        sigma_ratio: f32,
-    ) -> Result<Self, tch::TchError> {
         let mut var_store = nn::VarStore::new(get_device());
-        let critic = initialize_critic(
-            &var_store.root(),
-            value_bins,
-            value_min,
-            value_max,
-            sigma_ratio,
-        );
+        let critic = initialize_critic(&var_store.root());
         var_store.load(path)?;
         Ok(Self {
             _var_store: var_store,
@@ -93,7 +50,7 @@ impl ActorPolicy {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, tch::TchError> {
         let mut var_store = nn::VarStore::new(get_device());
         let actor = initialize_actor(&var_store.root());
-        var_store.load(path)?;
+        load_actor_weights(&mut var_store, path.as_ref())?;
         Ok(Self { var_store, actor })
     }
 
@@ -127,6 +84,43 @@ impl ActorPolicy {
         let selected = logits.argmax(-1, false).int64_value(&[0]) as usize;
         Some(legal_moves[selected].0.clone())
     }
+}
+
+/// Loads actor weights while padding checkpoints from before spatial move features were added.
+pub(crate) fn load_actor_weights(
+    var_store: &mut nn::VarStore,
+    path: &Path,
+) -> Result<(), tch::TchError> {
+    let checkpoint = tch::Tensor::load_multi_with_device(path, get_device())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+
+    for (name, mut destination) in var_store.variables() {
+        let source = checkpoint.get(&name).ok_or_else(|| {
+            tch::TchError::Kind(format!("actor checkpoint is missing variable {name}"))
+        })?;
+        let destination_shape = destination.size();
+        let source_shape = source.size();
+        let weights = if name == "action_input.weight"
+            && source_shape.len() == 2
+            && destination_shape.len() == 2
+            && source_shape[0] == destination_shape[0]
+            && source_shape[1] < destination_shape[1]
+        {
+            let padded = tch::Tensor::zeros(&destination_shape, (source.kind(), get_device()));
+            padded.narrow(1, 0, source_shape[1]).copy_(source);
+            padded
+        } else {
+            if source_shape != destination_shape {
+                return Err(tch::TchError::Kind(format!(
+                    "actor variable {name} has checkpoint shape {source_shape:?}, expected {destination_shape:?}"
+                )));
+            }
+            source.shallow_clone()
+        };
+        tch::no_grad(|| destination.copy_(&weights));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

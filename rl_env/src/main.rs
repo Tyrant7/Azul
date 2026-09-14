@@ -15,7 +15,7 @@ fn main() -> Result<(), tch::TchError> {
     let mut trainer = rl_env::PpoTrainer::new(config)?;
     trainer.set_reference_actor("checkpoints/reference_actor.ot")?;
     let mut environment = rl_env::AzulEnv::new(0, None);
-    let mut logger = logging::TrainingLogger::new("full_league_HL_Gauss_opt");
+    let mut logger = logging::TrainingLogger::new("full_league_scalar_critic");
 
     logger.log_device();
     trainer.train_with_callback(&mut environment, 1_000_000, |metrics| logger.log(metrics));

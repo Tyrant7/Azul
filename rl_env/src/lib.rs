@@ -35,6 +35,7 @@ const ACTION_DESTINATION_FEATURES: usize = DESTINATIONS_PER_ACTION;
 const ACTION_SPEC_FEATURES: usize =
     ACTION_SOURCE_FEATURES + TILE_TYPES + ACTION_DESTINATION_FEATURES;
 const DYNAMIC_ACTION_FEATURES: usize = 8;
+const ACTION_WALL_POSITION_FEATURES: usize = BOARD_SIZE * BOARD_SIZE;
 const FACTORY_BOWL_CAPACITY: f32 = 4.0;
 const MAX_TILE_TYPE_COUNT: f32 = 20.0;
 const MAX_PENALTY_SCORE: f32 = 12.0;
@@ -44,7 +45,8 @@ const MAX_PENALTY_SCORE: f32 = 12.0;
 pub const ACTION_SPACE_SIZE: usize = BOWL_SLOTS * TILE_TYPES * DESTINATIONS_PER_ACTION;
 
 /// Number of one-hot values used to describe a candidate action to the actor.
-pub const ACTION_FEATURE_SIZE: usize = ACTION_SPEC_FEATURES + DYNAMIC_ACTION_FEATURES;
+pub const ACTION_FEATURE_SIZE: usize =
+    ACTION_SPEC_FEATURES + DYNAMIC_ACTION_FEATURES + ACTION_WALL_POSITION_FEATURES;
 
 /// Number of values in every encoded, active-player-relative observation.
 pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
@@ -53,7 +55,7 @@ pub const OBSERVATION_SIZE: usize = BOWL_SLOTS * TILE_TYPES
     + FIRST_TOKEN_FEATURES
     + 2;
 
-/// Encodes the static source, tile-type, and destination features of an action.
+/// Encodes the static source, tile type, destination row, and wall-cell features of an action.
 /// State-dependent feature slots are left at zero by this state-independent helper.
 pub fn encode_action_features(action: usize) -> Option<[f32; ACTION_FEATURE_SIZE]> {
     if action >= ACTION_SPACE_SIZE {
@@ -66,7 +68,14 @@ pub fn encode_action_features(action: usize) -> Option<[f32; ACTION_FEATURE_SIZE
     let mut features = [0.0; ACTION_FEATURE_SIZE];
     features[source] = 1.0;
     features[ACTION_SOURCE_FEATURES + tile_type] = 1.0;
-    features[ACTION_SPEC_FEATURES - ACTION_DESTINATION_FEATURES + destination] = 1.0;
+    features[ACTION_SOURCE_FEATURES + TILE_TYPES + destination] = 1.0;
+    if destination > 0 {
+        let row = destination - 1;
+        let column = Board::get_tile_place_col(tile_type, row);
+        let wall_position_offset =
+            ACTION_SPEC_FEATURES + DYNAMIC_ACTION_FEATURES + row * BOARD_SIZE + column;
+        features[wall_position_offset] = 1.0;
+    }
     Some(features)
 }
 
@@ -802,11 +811,27 @@ mod tests {
         let action = ((2 * TILE_TYPES + 4) * DESTINATIONS_PER_ACTION) + 5;
         let features = encode_action_features(action).expect("action should be in range");
 
-        assert_eq!(features.iter().filter(|&&value| value == 1.0).count(), 3);
+        assert_eq!(features.iter().filter(|&&value| value == 1.0).count(), 4);
         assert_eq!(features[2], 1.0);
         assert_eq!(features[ACTION_SOURCE_FEATURES + 4], 1.0);
         assert_eq!(features[ACTION_SOURCE_FEATURES + TILE_TYPES + 5], 1.0);
+        let wall_position_offset =
+            ACTION_SPEC_FEATURES + DYNAMIC_ACTION_FEATURES + 4 * BOARD_SIZE + 3;
+        assert_eq!(features[wall_position_offset], 1.0);
         assert!(encode_action_features(ACTION_SPACE_SIZE).is_none());
+    }
+
+    #[test]
+    fn floor_actions_have_no_wall_position() {
+        let action = (2 * TILE_TYPES + 4) * DESTINATIONS_PER_ACTION;
+        let features = encode_action_features(action).expect("action should be in range");
+        let wall_position_offset = ACTION_SPEC_FEATURES + DYNAMIC_ACTION_FEATURES;
+        assert_eq!(
+            features[wall_position_offset..wall_position_offset + ACTION_WALL_POSITION_FEATURES]
+                .iter()
+                .sum::<f32>(),
+            0.0
+        );
     }
 
     #[test]

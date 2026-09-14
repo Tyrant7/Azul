@@ -62,13 +62,13 @@ the active player's board is first, the centre is encoded separately from
 factory bowls, and the two-player wire action space contains six source slots
 (centre plus five factories), five tile types, and six destinations. The
 policy scores state/action pairs and normalizes a categorical distribution over
-the currently legal candidates; the fixed 180-action IDs remain the boundary
-used by `step` and action masks.
-The critic uses an HL-Gauss categorical value head: it predicts probabilities
-over a fixed value support, trains against Gaussian-smoothed return targets,
-and decodes the expected support value for GAE and PPO. The support and target
-width are configurable through `critic_value_min`, `critic_value_max`,
-`critic_value_bins`, and `critic_sigma_ratio` in `PpoConfig`.
+the currently legal candidates. Each candidate also identifies the concrete
+wall cell occupied by its tile type and destination row; floor moves leave the
+wall-cell encoding inactive. The fixed 180-action IDs remain the boundary used
+by `step` and action masks.
+The critic uses a scalar value head trained with mean-squared error against the
+computed return targets. It provides the value estimates used for GAE, PPO,
+and critic-guided beam search.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 
@@ -261,9 +261,8 @@ applications, call
 set `evaluation_games` above zero to enable periodic evaluation.
 
 The current executable uses 1,000 rollout transitions, four full-batch PPO
-passes, and `gamma = 0.99`. The current HL-Gauss defaults are a value support
-of `[-6.5, 6.5]`, 128 bins, and `critic_sigma_ratio = 1.0`; the actor learning
-rate defaults to `3e-4` and the critic learning rate to `2e-4`. These
+passes, and `gamma = 0.99`. The actor learning rate defaults to `3e-4` and the
+critic learning rate to `2e-4`. These
 experimental values are defined in [`rl_env/src/main.rs`](rl_env/src/main.rs) and
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs).
 
