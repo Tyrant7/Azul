@@ -19,7 +19,7 @@ impl Default for BeamConfig {
     fn default() -> Self {
         Self {
             beam_width: 4,
-            depth: 2,
+            depth: 8,
         }
     }
 }
