@@ -10,9 +10,9 @@ const DIAGNOSTIC_INTERVAL: usize = 10;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
-    let checkpoint = arguments
-        .next()
-        .ok_or("usage: matchup ACTOR_CHECKPOINT [GAMES] [BEAM_WIDTH] [DEPTH]")?;
+    let checkpoint = arguments.next().ok_or(
+        "usage: matchup ACTOR_CHECKPOINT [GAMES] [BEAM_WIDTH] [DEPTH] [CRITIC_CHECKPOINT]",
+    )?;
     let games = parse_argument(arguments.next(), "games", DEFAULT_GAMES)?;
     if games == 0 {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "games must be positive").into());
@@ -23,9 +23,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         BeamConfig::default().beam_width,
     )?;
     let depth = parse_argument(arguments.next(), "depth", BeamConfig::default().depth)?;
+    let critic_checkpoint = arguments
+        .next()
+        .unwrap_or_else(|| "checkpoints/reference_critic.ot".to_owned());
 
     let baseline = ActorPolicy::load(&checkpoint)?;
-    let beam = BeamPolicy::load(&checkpoint, BeamConfig { beam_width, depth })?;
+    let beam = BeamPolicy::load(
+        &checkpoint,
+        critic_checkpoint,
+        BeamConfig { beam_width, depth },
+    )?;
     let mut beam_wins = 0;
     let mut baseline_wins = 0;
 

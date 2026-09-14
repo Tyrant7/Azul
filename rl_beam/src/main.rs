@@ -36,8 +36,15 @@ fn main() -> io::Result<()> {
         BeamConfig::default().beam_width,
     )?;
     let depth = parse_argument(arguments.next(), "beam depth", BeamConfig::default().depth)?;
-    let policy = BeamPolicy::load(&checkpoint, BeamConfig { beam_width, depth })
-        .map_err(|error| io::Error::other(format!("failed to load actor checkpoint: {error}")))?;
+    let critic_checkpoint = arguments
+        .next()
+        .unwrap_or_else(|| "checkpoints/reference_critic.ot".to_owned());
+    let policy = BeamPolicy::load(
+        &checkpoint,
+        critic_checkpoint,
+        BeamConfig { beam_width, depth },
+    )
+    .map_err(|error| io::Error::other(format!("failed to load beam checkpoints: {error}")))?;
     run_engine(RlBeamEngine { policy })
 }
 

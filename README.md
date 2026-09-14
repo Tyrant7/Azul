@@ -85,11 +85,10 @@ for the remaining training-system work.
 
 ### `rl_beam`
 
-[`rl_beam/`](rl_beam/) exposes the trained actor through UAI with a basic
-policy-prior beam search. It also provides a direct matchup binary for
-comparing greedy and beam policies over reproducibly seeded games. The beam
-search currently uses actor log-probabilities only; it does not use the critic
-or perform minimax search. See [`rl_beam/README.md`](rl_beam/README.md).
+[`rl_beam/`](rl_beam/) exposes the fixed reference actor and critic through UAI
+with a critic-guided alternating beam search. It also provides a direct
+matchup binary for comparing greedy and beam policies over reproducibly seeded
+games. See [`rl_beam/README.md`](rl_beam/README.md).
 
 A minimal training session can be started from Rust with:
 
@@ -192,7 +191,7 @@ width and depth after the checkpoint path:
 
 ```bash
 cargo run -p interface -- \
-  --engine "path=./target/debug/rl_beam args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+  --engine "path=./target/debug/rl_beam args=checkpoints/reference_actor.ot proto=uai tc=1+0" \
            "proto=human" \
   --out ./runs/beam-game.azl \
   --seed 42
@@ -203,7 +202,7 @@ checkpoint:
 
 ```bash
 cargo run -p rl_beam --bin matchup -- \
-  checkpoints/azul_actor.ot 1000 4 2
+  checkpoints/reference_actor.ot 1000 4 2
 ```
 
 Use `cargo run -p interface -- --help` for time controls, diagnostics, engine

@@ -6,13 +6,86 @@ use azul_movegen::{GameState, Move};
 use tch::{Tensor, nn, no_grad};
 
 use crate::get_device;
-use crate::net::{ActionConditionedActor, initialize_actor};
+use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
 use crate::{ACTION_FEATURE_SIZE, encode_state, legal_move_features};
+
+const DEFAULT_CRITIC_VALUE_MIN: f32 = -6.5;
+const DEFAULT_CRITIC_VALUE_MAX: f32 = 6.5;
+const DEFAULT_CRITIC_VALUE_BINS: usize = 128;
+const DEFAULT_CRITIC_SIGMA_RATIO: f32 = 1.0;
 
 /// A trained actor loaded for inference without PPO optimizer state.
 pub struct ActorPolicy {
     var_store: nn::VarStore,
     actor: ActionConditionedActor,
+}
+
+/// A trained scalar or HL-Gauss critic loaded for inference.
+pub struct CriticPolicy {
+    _var_store: nn::VarStore,
+    critic: ResNetwork,
+}
+
+impl CriticPolicy {
+    /// Loads a critic checkpoint, inferring scalar versus categorical output.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, tch::TchError> {
+        let value_bins =
+            tch::Tensor::load_multi_with_device(&path, tch::Device::Cpu).and_then(|variables| {
+                variables
+                    .into_iter()
+                    .find(|(name, _)| name == "head.weight")
+                    .and_then(|(_, tensor)| tensor.size().first().copied())
+                    .map(|bins| {
+                        usize::try_from(bins).map_err(|_| {
+                            tch::TchError::Kind(format!(
+                                "critic checkpoint has invalid bin count: {bins}"
+                            ))
+                        })
+                    })
+                    .unwrap_or(Ok(DEFAULT_CRITIC_VALUE_BINS))
+            })?;
+        Self::load_with_support(
+            path,
+            value_bins,
+            DEFAULT_CRITIC_VALUE_MIN,
+            DEFAULT_CRITIC_VALUE_MAX,
+            DEFAULT_CRITIC_SIGMA_RATIO,
+        )
+    }
+
+    /// Loads a critic checkpoint with explicit HL-Gauss support parameters.
+    pub fn load_with_support<P: AsRef<Path>>(
+        path: P,
+        value_bins: usize,
+        value_min: f32,
+        value_max: f32,
+        sigma_ratio: f32,
+    ) -> Result<Self, tch::TchError> {
+        let mut var_store = nn::VarStore::new(get_device());
+        let critic = initialize_critic(
+            &var_store.root(),
+            value_bins,
+            value_min,
+            value_max,
+            sigma_ratio,
+        );
+        var_store.load(path)?;
+        Ok(Self {
+            _var_store: var_store,
+            critic,
+        })
+    }
+
+    /// Evaluates a batch of player-relative states with the critic.
+    pub fn values(&self, states: &Tensor) -> Tensor {
+        no_grad(|| self.critic.values(states))
+    }
+
+    /// Evaluates one game state and returns its scalar critic value.
+    pub fn value(&self, game: &GameState) -> f32 {
+        self.values(&encode_state(game).unsqueeze(0))
+            .double_value(&[0]) as f32
+    }
 }
 
 impl ActorPolicy {

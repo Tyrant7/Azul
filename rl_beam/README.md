@@ -1,10 +1,11 @@
 # RL Beam Engine
 
-`rl_beam` exposes the trained actor through the interface crate's UAI runtime
-and selects moves with a policy-prior beam search. It keeps the highest-scoring
-partial action sequences according to the actor's masked log-probabilities and
-returns the first move from the best line. The current implementation is a
-basic policy beam: it does not load the critic or perform minimax search.
+`rl_beam` exposes the fixed reference actor through the interface crate's UAI
+runtime. The actor generates candidate moves, while the matching reference
+critic evaluates search states from the root player's perspective. The critic
+may be scalar MSE or categorical; the loader detects the checkpoint head shape.
+Opponent layers retain lower-valued states and root-player layers retain
+higher-valued states as a basic alternating beam search.
 
 ## Play against the beam engine
 
@@ -14,7 +15,7 @@ Build the engine with the project PyTorch environment active:
 source scripts/activate-env.sh
 cargo build -p interface -p rl_beam
 cargo run -p interface -- \
-  --engine "path=./target/debug/rl_beam args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+  --engine "path=./target/debug/rl_beam args=checkpoints/reference_actor.ot proto=uai tc=1+0" \
            "proto=human" \
   --out ./runs/beam-game.azl \
   --seed 42
@@ -23,10 +24,12 @@ cargo run -p interface -- \
 The engine accepts optional positional arguments after the checkpoint path:
 
 ```text
-rl_beam ACTOR_CHECKPOINT [BEAM_WIDTH] [DEPTH]
+rl_beam ACTOR_CHECKPOINT [BEAM_WIDTH] [DEPTH] [CRITIC_CHECKPOINT]
 ```
 
-The defaults are beam width `4` and depth `2` plies.
+The default critic checkpoint is `checkpoints/reference_critic.ot`. The default
+beam width is `4` and depth is `2` plies. The actor and critic should be the
+matching reference checkpoints for this experiment.
 
 ## Compare greedy and beam policies
 
@@ -36,7 +39,7 @@ each game deterministically, and alternates which player receives beam search:
 ```bash
 source scripts/activate-env.sh
 cargo run -p rl_beam --bin matchup -- \
-  checkpoints/azul_actor.ot 1000 4 2
+  checkpoints/reference_actor.ot 1000 4 2
 ```
 
 The arguments are `ACTOR_CHECKPOINT`, `GAMES`, `BEAM_WIDTH`, and `DEPTH`.

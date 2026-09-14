@@ -137,10 +137,14 @@ impl ResNetwork {
         (logits.softmax(-1, Kind::Float) * atoms).sum_dim_intlist([-1].as_ref(), false, Kind::Float)
     }
 
-    /// Runs the critic and decodes its categorical output into scalar values.
+    /// Runs the critic and returns scalar values for categorical or scalar heads.
     pub fn values(&self, states: &Tensor) -> Tensor {
         let logits = <Self as Module>::forward(self, states);
-        self.decode_values(&logits)
+        if self.value_bins == 1 {
+            logits.squeeze_dim(-1)
+        } else {
+            self.decode_values(&logits)
+        }
     }
 
     /// Computes cross-entropy against Gaussian-smoothed scalar return targets.
@@ -225,7 +229,7 @@ pub fn initialize_actor(vs: &nn::Path) -> ActionConditionedActor {
     }
 }
 
-/// Builds a categorical value network whose expected support value estimates the current state value.
+/// Builds a scalar or categorical value network for current-state estimates.
 pub fn initialize_critic(
     vs: &nn::Path,
     value_bins: usize,
@@ -233,10 +237,14 @@ pub fn initialize_critic(
     value_max: f32,
     sigma_ratio: f32,
 ) -> ResNetwork {
-    assert!(value_bins >= 2);
+    assert!(value_bins >= 1);
     assert!(value_min.is_finite() && value_max.is_finite() && value_min < value_max);
     assert!(sigma_ratio.is_finite() && sigma_ratio > 0.0);
-    let bin_width = (value_max as f64 - value_min as f64) / (value_bins - 1) as f64;
+    let bin_width = if value_bins >= 2 {
+        (value_max as f64 - value_min as f64) / (value_bins - 1) as f64
+    } else {
+        1.0
+    };
     ResNetwork {
         encoder: StateEncoder::new(vs),
         head: head_linear(vs / "head", HIDDEN, value_bins as i64),

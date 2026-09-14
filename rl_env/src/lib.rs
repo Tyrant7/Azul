@@ -12,7 +12,7 @@ mod policy;
 pub mod ppo;
 
 pub use metrics::{GreedyEvaluation, PpoMetrics};
-pub use policy::ActorPolicy;
+pub use policy::{ActorPolicy, CriticPolicy};
 pub use ppo::{PpoConfig, PpoTrainer};
 
 const BOARD_SIZE: usize = board::BOARD_DIMENSION;
