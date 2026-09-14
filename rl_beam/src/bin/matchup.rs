@@ -1,4 +1,4 @@
-use std::{env, error::Error, io};
+use std::{env, error::Error, io, io::Write};
 
 use azul_movegen::GameState;
 use rl_beam::{BeamConfig, BeamPolicy};
@@ -6,6 +6,7 @@ use rl_env::ActorPolicy;
 
 const DEFAULT_GAMES: usize = 1_000;
 const DEFAULT_SEED: u64 = 0xA2_55_10_01;
+const DIAGNOSTIC_INTERVAL: usize = 10;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
@@ -41,6 +42,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             baseline_wins += 1;
         }
+
+        let completed_games = game_index + 1;
+        if completed_games % DIAGNOSTIC_INTERVAL == 0 || completed_games == games {
+            print_progress(completed_games, games, beam_wins, baseline_wins)?;
+        }
     }
 
     println!(
@@ -53,6 +59,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         beam_wins as f32 / games as f32,
     );
     Ok(())
+}
+
+/// Prints the current matchup totals at a fixed interval during long runs.
+fn print_progress(
+    completed_games: usize,
+    total_games: usize,
+    beam_wins: usize,
+    baseline_wins: usize,
+) -> io::Result<()> {
+    println!(
+        "progress games={completed_games}/{total_games} beam_wins={beam_wins} baseline_wins={baseline_wins} beam_win_rate={:.3}",
+        beam_wins as f32 / completed_games as f32,
+    );
+    io::stdout().flush()
 }
 
 /// Plays one seeded game with the beam policy assigned to one player.
