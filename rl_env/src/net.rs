@@ -125,6 +125,13 @@ impl Module for ResNetwork {
     }
 }
 
+impl ResNetwork {
+    /// Runs the scalar value critic for a batch of states.
+    pub fn values(&self, states: &Tensor) -> Tensor {
+        <Self as Module>::forward(self, states).squeeze_dim(-1)
+    }
+}
+
 /// Scores candidate actions conditioned on a shared state representation.
 #[derive(Debug)]
 pub struct ActionConditionedActor {
@@ -174,10 +181,28 @@ pub fn initialize_actor(vs: &nn::Path) -> ActionConditionedActor {
     }
 }
 
-/// Builds a value network whose output estimates the current state value.
+/// Builds a scalar value network for current-state estimates.
 pub fn initialize_critic(vs: &nn::Path) -> ResNetwork {
     ResNetwork {
         encoder: StateEncoder::new(vs),
         head: head_linear(vs / "head", HIDDEN, 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::initialize_critic;
+    use crate::get_device;
+    use tch::{Tensor, nn};
+
+    #[test]
+    fn scalar_critic_returns_one_value_per_state() {
+        let var_store = nn::VarStore::new(get_device());
+        let critic = initialize_critic(&var_store.root());
+        let states = Tensor::zeros(
+            [3, crate::OBSERVATION_SIZE as i64],
+            (tch::Kind::Float, get_device()),
+        );
+        assert_eq!(critic.values(&states).size(), [3]);
     }
 }

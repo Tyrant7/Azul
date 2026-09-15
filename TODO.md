@@ -30,17 +30,16 @@ movegen  <-  interface and engines  <-  tournaments, self-play, and training
 ### Immediate goals
 
 - Add batched and vectorized environments for parallel rollouts
-- Minibatching
-- Add greedy policy evaluations against strongest previous checkpoints and track winrate
-- Look into 1. Nextlat 2. HL Gauss
+- Look into 1. Nextlat
 - Deterministic reproducibility
 - Add optimizer state, scheduler state, counters, configuration, and RNG state to save/load checkpoint and make training pause/resume possible
 - Add promotion gates so new checkpoints must beat a reference agent before entering the opponent pool
-- Document everything -> esepcially how to play against the various engine checkpoints
+- Document checkpoint promotion and evaluation workflows as they evolve
+- Experiment again with minibatching
 
 ### Longterm goals
 
 - Explore MCTS or AlphaZero-style search on top of the learned policy/value model.
-- Add Elo or another rating system for checkpoint and opponent-pool comparisons
+- Explore rating systems for future multi-agent arena comparisons
 - Add deterministic evaluation suites separate from stochastic training
 - Document how to reproduce a published run from a clean checkout

@@ -6,7 +6,7 @@ use azul_movegen::{GameState, Move};
 use tch::{Tensor, nn, no_grad};
 
 use crate::get_device;
-use crate::net::{ActionConditionedActor, initialize_actor};
+use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
 use crate::{ACTION_FEATURE_SIZE, encode_state, legal_move_features};
 
 /// A trained actor loaded for inference without PPO optimizer state.
@@ -15,12 +15,42 @@ pub struct ActorPolicy {
     actor: ActionConditionedActor,
 }
 
+/// A trained scalar critic loaded for inference.
+pub struct CriticPolicy {
+    _var_store: nn::VarStore,
+    critic: ResNetwork,
+}
+
+impl CriticPolicy {
+    /// Loads a scalar critic checkpoint.
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, tch::TchError> {
+        let mut var_store = nn::VarStore::new(get_device());
+        let critic = initialize_critic(&var_store.root());
+        var_store.load(path)?;
+        Ok(Self {
+            _var_store: var_store,
+            critic,
+        })
+    }
+
+    /// Evaluates a batch of player-relative states with the critic.
+    pub fn values(&self, states: &Tensor) -> Tensor {
+        no_grad(|| self.critic.values(states))
+    }
+
+    /// Evaluates one game state and returns its scalar critic value.
+    pub fn value(&self, game: &GameState) -> f32 {
+        self.values(&encode_state(game).unsqueeze(0))
+            .double_value(&[0]) as f32
+    }
+}
+
 impl ActorPolicy {
     /// Loads actor weights from a LibTorch var-store checkpoint.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, tch::TchError> {
         let mut var_store = nn::VarStore::new(get_device());
         let actor = initialize_actor(&var_store.root());
-        var_store.load(path)?;
+        load_actor_weights(&mut var_store, path.as_ref())?;
         Ok(Self { var_store, actor })
     }
 
@@ -54,6 +84,43 @@ impl ActorPolicy {
         let selected = logits.argmax(-1, false).int64_value(&[0]) as usize;
         Some(legal_moves[selected].0.clone())
     }
+}
+
+/// Loads actor weights while padding checkpoints from before spatial move features were added.
+pub(crate) fn load_actor_weights(
+    var_store: &mut nn::VarStore,
+    path: &Path,
+) -> Result<(), tch::TchError> {
+    let checkpoint = tch::Tensor::load_multi_with_device(path, get_device())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+
+    for (name, mut destination) in var_store.variables() {
+        let source = checkpoint.get(&name).ok_or_else(|| {
+            tch::TchError::Kind(format!("actor checkpoint is missing variable {name}"))
+        })?;
+        let destination_shape = destination.size();
+        let source_shape = source.size();
+        let weights = if name == "action_input.weight"
+            && source_shape.len() == 2
+            && destination_shape.len() == 2
+            && source_shape[0] == destination_shape[0]
+            && source_shape[1] < destination_shape[1]
+        {
+            let padded = tch::Tensor::zeros(&destination_shape, (source.kind(), get_device()));
+            padded.narrow(1, 0, source_shape[1]).copy_(source);
+            padded
+        } else {
+            if source_shape != destination_shape {
+                return Err(tch::TchError::Kind(format!(
+                    "actor variable {name} has checkpoint shape {source_shape:?}, expected {destination_shape:?}"
+                )));
+            }
+            source.shallow_clone()
+        };
+        tch::no_grad(|| destination.copy_(&weights));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

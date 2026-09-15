@@ -1,5 +1,14 @@
 use crate::ppo::{EpisodeStats, RolloutDiagnostics};
 
+/// Aggregate result from greedy games against the fixed evaluation reference.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GreedyEvaluation {
+    pub games: usize,
+    pub wins: usize,
+    pub losses: usize,
+    pub win_rate: f32,
+}
+
 /// Scalar diagnostics emitted after each PPO rollout and update iteration.
 #[derive(Debug, Clone, Copy)]
 pub struct PpoMetrics {
@@ -12,6 +21,8 @@ pub struct PpoMetrics {
     pub mean_final_score_difference: f32,
     pub mean_winner_score: f32,
     pub learner_win_rate: f32,
+    pub greedy_win_rate: f32,
+    pub greedy_eval_games: usize,
     pub average_penalties_per_game: [f32; 2],
     pub average_bonus_points_per_game: [f32; 2],
     pub average_rows_filled_per_game: [f32; 2],
@@ -68,6 +79,7 @@ impl PpoMetrics {
         episodes: &[EpisodeStats],
         diagnostics: &RolloutDiagnostics,
         optimization: OptimizationMetrics,
+        evaluation: GreedyEvaluation,
     ) -> Self {
         Self {
             iteration,
@@ -81,6 +93,8 @@ impl PpoMetrics {
             }),
             mean_winner_score: mean_episode_metric(episodes, |episode| episode.winner_score),
             learner_win_rate: terminal_win_rate(episodes),
+            greedy_win_rate: evaluation.win_rate,
+            greedy_eval_games: evaluation.games,
             average_penalties_per_game: mean_episode_array(episodes, |episode| episode.penalties),
             average_bonus_points_per_game: mean_episode_array(episodes, |episode| {
                 episode.bonus_points

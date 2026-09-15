@@ -3,11 +3,12 @@
 use std::path::Path;
 
 use rand::RngExt;
-use tch::{Kind, Reduction, Tensor, nn, nn::Module, nn::OptimizerConfig, no_grad};
+use tch::{Kind, Tensor, nn, nn::OptimizerConfig, no_grad};
 
-use crate::metrics::{OptimizationMetrics, PpoMetrics};
+use crate::metrics::{GreedyEvaluation, OptimizationMetrics, PpoMetrics};
 use crate::net::{ActionConditionedActor, ResNetwork, initialize_actor, initialize_critic};
-use crate::{ACTION_FEATURE_SIZE, AzulEnv, get_device};
+use crate::policy::load_actor_weights;
+use crate::{ACTION_FEATURE_SIZE, AzulEnv, PLAYER_COUNT, get_device};
 
 /// Hyperparameters for the minimal PPO trainer.
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +31,12 @@ pub struct PpoConfig {
     pub lower_clip_epsilon: f64,
     /// PPO probability-ratio clipping range for advantaged actions.
     pub upper_clip_epsilon: f64,
+    /// Number of greedy evaluation games played against the fixed reference; zero disables evaluation.
+    pub evaluation_games: usize,
+    /// PPO iterations between greedy evaluation runs.
+    pub evaluation_interval: usize,
+    /// Base seed used to make evaluation game positions reproducible.
+    pub evaluation_seed: u64,
 }
 
 impl Default for PpoConfig {
@@ -38,12 +45,15 @@ impl Default for PpoConfig {
             timesteps_per_batch: 1_000,
             updates_per_iteration: 4,
             actor_learning_rate: 3e-4,
-            critic_learning_rate: 1e-4,
+            critic_learning_rate: 2e-4,
             max_grad_norm: 0.5,
             gamma: 0.99,
             lambda: 0.95,
             lower_clip_epsilon: 0.2,
             upper_clip_epsilon: 0.28,
+            evaluation_games: 0,
+            evaluation_interval: 10,
+            evaluation_seed: 0xA2_55_10_01,
         }
     }
 }
@@ -297,6 +307,12 @@ struct HistoricalPolicy {
     actor: ActionConditionedActor,
 }
 
+/// Frozen actor checkpoint used as a stable evaluation reference.
+struct ReferencePolicy {
+    _var_store: nn::VarStore,
+    actor: ActionConditionedActor,
+}
+
 #[derive(Default)]
 struct OpponentPool {
     historical: Vec<HistoricalPolicy>,
@@ -328,6 +344,42 @@ impl OpponentPool {
             OpponentKind::Heuristic
         }
     }
+
+    /// Copies the current actor into the frozen historical checkpoint pool.
+    fn capture(&mut self, actor_vs: &nn::VarStore) -> Result<(), tch::TchError> {
+        let mut var_store = nn::VarStore::new(get_device());
+        let actor = initialize_actor(&var_store.root());
+        var_store.copy(actor_vs)?;
+        self.historical.push(HistoricalPolicy {
+            _var_store: var_store,
+            actor,
+        });
+        Ok(())
+    }
+}
+
+/// Selects the highest-logit legal action without sampling.
+fn select_greedy_action(
+    actor: &ActionConditionedActor,
+    state: &Tensor,
+    legal_candidates: &[(usize, [f32; ACTION_FEATURE_SIZE])],
+) -> usize {
+    no_grad(|| {
+        assert!(
+            !legal_candidates.is_empty(),
+            "the environment returned no legal actions"
+        );
+        let feature_values: Vec<_> = legal_candidates
+            .iter()
+            .flat_map(|(_, features)| features.iter().copied())
+            .collect();
+        let action_features = Tensor::from_slice(&feature_values)
+            .reshape([1, legal_candidates.len() as i64, ACTION_FEATURE_SIZE as i64])
+            .to_device(get_device());
+        let logits = actor.forward(&state.unsqueeze(0), &action_features);
+        let candidate_index = logits.argmax(-1, false).int64_value(&[0]) as usize;
+        legal_candidates[candidate_index].0
+    })
 }
 
 /// Samples one legal candidate and records its old log-probability and value estimate.
@@ -362,7 +414,7 @@ fn sample_action(
             .gather(1, &candidate, false)
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
-        let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
+        let value = critic.values(&state).double_value(&[0]) as f32;
         (
             legal_candidates[candidate_index].0 as i64,
             old_log_prob,
@@ -403,7 +455,7 @@ fn evaluate_action(
             .gather(1, &action_tensor, false)
             .squeeze_dim(1)
             .double_value(&[0]) as f32;
-        let value = critic.forward(&state).squeeze_dim(1).double_value(&[0]) as f32;
+        let value = critic.values(&state).double_value(&[0]) as f32;
         (old_log_prob, value)
     })
 }
@@ -443,6 +495,7 @@ pub struct PpoTrainer {
     critic_optimizer: nn::Optimizer,
     config: PpoConfig,
     opponent_pool: OpponentPool,
+    reference_actor: Option<ReferencePolicy>,
 }
 
 impl PpoTrainer {
@@ -455,6 +508,7 @@ impl PpoTrainer {
         assert!(config.lambda >= 0.0 && config.lambda <= 1.0);
         assert!(config.lower_clip_epsilon > 0.0);
         assert!(config.upper_clip_epsilon > 0.0);
+        assert!(config.evaluation_interval > 0);
 
         let actor_vs = nn::VarStore::new(get_device());
         let critic_vs = nn::VarStore::new(get_device());
@@ -473,24 +527,67 @@ impl PpoTrainer {
             critic_optimizer,
             config,
             opponent_pool: OpponentPool::default(),
+            reference_actor: None,
         })
     }
 
     /// Saves the current actor as a frozen historical opponent.
     pub fn add_historical_opponent(&mut self) -> Result<(), tch::TchError> {
+        self.capture_current_opponent()
+    }
+
+    /// Returns the number of frozen historical opponents in the pool.
+    pub fn historical_opponent_count(&self) -> usize {
+        self.opponent_pool.historical.len()
+    }
+
+    /// Loads a frozen actor checkpoint for stable evaluation across training.
+    pub fn set_reference_actor<P: AsRef<Path>>(&mut self, path: P) -> Result<(), tch::TchError> {
         let mut var_store = nn::VarStore::new(get_device());
         let actor = initialize_actor(&var_store.root());
-        var_store.copy(&self.actor_vs)?;
-        self.opponent_pool.historical.push(HistoricalPolicy {
+        load_actor_weights(&mut var_store, path.as_ref())?;
+        self.reference_actor = Some(ReferencePolicy {
             _var_store: var_store,
             actor,
         });
         Ok(())
     }
 
-    /// Returns the number of frozen historical opponents in the pool.
-    pub fn historical_opponent_count(&self) -> usize {
-        self.opponent_pool.historical.len()
+    /// Evaluates the current actor greedily against the fixed reference actor.
+    pub fn evaluate_greedy_against_reference(
+        &mut self,
+        env: &mut AzulEnv,
+        games: usize,
+        seed: u64,
+    ) -> GreedyEvaluation {
+        if games == 0 || self.reference_actor.is_none() {
+            return GreedyEvaluation::default();
+        }
+
+        let wins = {
+            let reference = self
+                .reference_actor
+                .as_ref()
+                .expect("reference actor presence was checked");
+            let mut wins = 0;
+            for game_index in 0..games {
+                let learner_player = game_index % PLAYER_COUNT;
+                let game_seed = seed.wrapping_add(game_index as u64);
+                if self.play_greedy_game(env, &reference.actor, learner_player, game_seed) {
+                    wins += 1;
+                }
+            }
+            wins
+        };
+
+        let win_rate = wins as f32 / games as f32;
+
+        GreedyEvaluation {
+            games,
+            wins,
+            losses: games - wins,
+            win_rate,
+        }
     }
 
     /// Saves the current actor and critic weights to separate checkpoints.
@@ -517,6 +614,11 @@ impl PpoTrainer {
     ) where
         F: FnMut(&PpoMetrics),
     {
+        if self.config.evaluation_games > 0 && self.opponent_pool.historical.is_empty() {
+            self.capture_current_opponent()
+                .expect("initial evaluation checkpoint should be capturable");
+        }
+
         let mut timesteps = 0;
         let mut iteration = 0;
         while timesteps < total_timesteps {
@@ -550,8 +652,9 @@ impl PpoTrainer {
                     .sum(Kind::Float)
                     / &learner_count;
 
-                let values = self.critic.forward(&data.states).squeeze_dim(1);
-                let critic_loss_tensor = values.mse_loss(&data.returns, Reduction::Mean);
+                let critic_values = self.critic.values(&data.states);
+                let critic_loss_tensor =
+                    (&critic_values - &data.returns).square().mean(Kind::Float);
 
                 optimization.actor_loss = actor_loss_tensor.double_value(&[]) as f32;
                 optimization.critic_loss = critic_loss_tensor.double_value(&[]) as f32;
@@ -616,6 +719,22 @@ impl PpoTrainer {
             }
 
             iteration += 1;
+            let evaluation = if self.config.evaluation_games > 0
+                && iteration % self.config.evaluation_interval == 0
+            {
+                self.evaluate_greedy_against_reference(
+                    env,
+                    self.config.evaluation_games,
+                    self.config.evaluation_seed.wrapping_add(iteration as u64),
+                )
+            } else {
+                GreedyEvaluation::default()
+            };
+            if self.config.evaluation_games > 0 {
+                self.capture_current_opponent()
+                    .expect("evaluation checkpoint should be capturable");
+            }
+
             let metrics = PpoMetrics::from_update(
                 iteration,
                 timesteps,
@@ -623,8 +742,40 @@ impl PpoTrainer {
                 &episode_stats,
                 &data.diagnostics,
                 optimization,
+                evaluation,
             );
             on_update(&metrics);
+        }
+    }
+
+    /// Captures the current actor as a frozen training opponent.
+    fn capture_current_opponent(&mut self) -> Result<(), tch::TchError> {
+        self.opponent_pool.capture(&self.actor_vs)
+    }
+
+    /// Plays one deterministic greedy game against a frozen actor snapshot.
+    fn play_greedy_game(
+        &self,
+        env: &mut AzulEnv,
+        opponent: &ActionConditionedActor,
+        learner_player: usize,
+        seed: u64,
+    ) -> bool {
+        let mut state = env.seeded_reset(seed, None);
+        loop {
+            let legal_candidates = env.legal_action_features();
+            let active_player = env.get_gamestate().get_active_player();
+            let actor = if active_player == learner_player {
+                &self.actor
+            } else {
+                opponent
+            };
+            let action = select_greedy_action(actor, &state, &legal_candidates);
+            let result = env.step(action).expect("greedy action must be legal");
+            if result.terminated {
+                return env.get_gamestate().get_winner() == learner_player;
+            }
+            state = result.next_state;
         }
     }
 
@@ -708,8 +859,7 @@ impl PpoTrainer {
                 } else {
                     no_grad(|| {
                         self.critic
-                            .forward(&result.next_state.unsqueeze(0))
-                            .squeeze_dim(1)
+                            .values(&result.next_state.unsqueeze(0))
                             .double_value(&[0]) as f32
                     })
                 };
@@ -983,6 +1133,32 @@ mod tests {
     }
 
     #[test]
+    fn greedy_evaluation_reports_results_against_the_reference_checkpoint() {
+        let mut actor_path = PathBuf::from(std::env::temp_dir());
+        actor_path.push(format!("azul-reference-actor-{}.ot", std::process::id()));
+        let mut critic_path = PathBuf::from(std::env::temp_dir());
+        critic_path.push(format!("azul-reference-critic-{}.ot", std::process::id()));
+
+        let mut trainer = PpoTrainer::new(PpoConfig::default()).expect("trainer should initialize");
+        trainer
+            .save_checkpoints(&actor_path, &critic_path)
+            .expect("reference checkpoint should save");
+        trainer
+            .set_reference_actor(&actor_path)
+            .expect("reference checkpoint should load");
+        let mut environment = AzulEnv::new(0, None);
+
+        let evaluation = trainer.evaluate_greedy_against_reference(&mut environment, 1, 42);
+
+        assert_eq!(evaluation.games, 1);
+        assert_eq!(evaluation.wins + evaluation.losses, evaluation.games);
+        assert!((0.0..=1.0).contains(&evaluation.win_rate));
+
+        std::fs::remove_file(actor_path).expect("reference actor checkpoint should be removable");
+        std::fs::remove_file(critic_path).expect("critic checkpoint should be removable");
+    }
+
+    #[test]
     fn trainer_collects_a_complete_game_before_updating() {
         let config = PpoConfig {
             timesteps_per_batch: 1,
@@ -1025,6 +1201,11 @@ mod tests {
         trainer
             .save_checkpoints(&actor_path, &critic_path)
             .expect("checkpoints should save");
+        let mut reference_trainer =
+            PpoTrainer::new(PpoConfig::default()).expect("reference trainer should initialize");
+        reference_trainer
+            .set_reference_actor(&actor_path)
+            .expect("reference actor checkpoint should load");
         ActorPolicy::load(&actor_path).expect("actor checkpoint should load");
 
         std::fs::remove_file(actor_path).expect("actor checkpoint should be removable");

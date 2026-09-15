@@ -10,6 +10,7 @@ azul/
 ├── interface/       CLI, UAI direction, move parsing, and AzulFEN I/O
 ├── random_engine/   Random legal-move UAI engine
 ├── rl_env/          Two-player reinforcement-learning environment
+├── rl_beam/         Policy-prior beam-search UAI engine and matchup tool
 ├── Cargo.toml       Workspace definition
 └── TODO.md          Development and reinforcement-learning roadmap
 ```
@@ -61,18 +62,33 @@ the active player's board is first, the centre is encoded separately from
 factory bowls, and the two-player wire action space contains six source slots
 (centre plus five factories), five tile types, and six destinations. The
 policy scores state/action pairs and normalizes a categorical distribution over
-the currently legal candidates; the fixed 180-action IDs remain the boundary
-used by `step` and action masks.
+the currently legal candidates. Each candidate also identifies the concrete
+wall cell occupied by its tile type and destination row; floor moves leave the
+wall-cell encoding inactive. The fixed 180-action IDs remain the boundary used
+by `step` and action masks.
+The critic uses a scalar value head trained with mean-squared error against the
+computed return targets. It provides the value estimates used for GAE, PPO,
+and critic-guided beam search.
 The crate uses `tch`, so building it requires a compatible LibTorch
 installation; the rules and interface crates can be tested independently.
 
 The current trainer is intentionally a learning baseline rather than a full
-training system. It has no minibatches, entropy bonus, parallel rollout
-workers, checkpoint commands, or deterministic evaluation harness yet. It
-uses generalized advantage estimation and writes scalar training diagnostics
-to `runs/azul_ppo` using TensorBoard event files. See
+training system. It has no minibatches, entropy bonus, or parallel rollout
+workers. It uses generalized advantage estimation, supports optional
+deterministic greedy evaluation against a frozen reference actor, and writes
+scalar training diagnostics to `runs/azul_ppo` using TensorBoard event files.
+Set `PpoConfig::evaluation_games` above zero and configure a reference actor to
+enable evaluation; `evaluation_interval` controls how many PPO iterations occur
+between evaluations. See
 [`rl_env/src/ppo.rs`](rl_env/src/ppo.rs) for the algorithm and [`TODO.md`](TODO.md)
 for the remaining training-system work.
+
+### `rl_beam`
+
+[`rl_beam/`](rl_beam/) exposes the fixed reference actor and critic through UAI
+with a critic-guided alternating beam search. It also provides a direct
+matchup binary for comparing greedy and beam policies over reproducibly seeded
+games. See [`rl_beam/README.md`](rl_beam/README.md).
 
 A minimal training session can be started from Rust with:
 
@@ -92,6 +108,163 @@ python -m pip install tensorboard  # once, if TensorBoard is not installed
 cargo run -p rl_env
 tensorboard --logdir runs
 ```
+
+## Playing and training
+
+The `interface` executable is the easiest way to play a game. It accepts at
+least two engine descriptors; human players use `proto=human`, while UAI
+engines provide an executable path and a time control.
+
+### Human play
+
+Start a human-vs-human game with a reproducible opening:
+
+```bash
+cargo run -p interface -- \
+  --engine "proto=human" "proto=human" \
+  --out ./runs/manual-game.azl \
+  --seed 42
+```
+
+For human moves, enter six digits in the form `BBTTDD`:
+
+| Field | Meaning |
+| --- | --- |
+| `BB` | Wire bowl: `00` is the centre, `01` is factory 0, and so on. |
+| `TT` | Tile type, from `00` through `04`. |
+| `DD` | Destination: `00` is the floor, while `01` through `05` are wall rows 1 through 5. |
+
+For example, `040102` takes tile type 1 from factory 3 and places it on wall
+row 2. The interface prints the board after each accepted move and rejects
+malformed or illegal moves.
+
+### Play against the random engine
+
+Build the interface and baseline engine, then start a human-vs-random game:
+
+```bash
+cargo build -p interface -p random_engine
+cargo run -p interface -- \
+  --engine "path=./target/debug/random_engine proto=uai tc=60+2" \
+           "proto=human" \
+  --out ./runs/random-game.azl \
+  --seed 42
+```
+
+The order of the descriptors determines player numbers. In this example the
+random engine is player 0 and the human is player 1. Swap the descriptors to
+play first.
+
+### Play against a trained actor
+
+`rl_engine` loads an actor checkpoint and exposes it as a UAI engine. The actor
+checkpoint is sufficient for play; the critic checkpoint is used during PPO
+training and is not required by `rl_engine`.
+
+```bash
+source scripts/activate-env.sh
+cargo build -p interface -p rl_engine
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "proto=human" \
+  --out ./runs/rl-game.azl \
+  --seed 42
+```
+
+The `checkpoints/azul_actor.ot` file is the actor produced by the included
+training executable when training completes. To use another checkpoint, change
+the path after `args=`. The checkpoint path must not contain spaces because
+engine descriptors are currently whitespace-separated.
+
+You can also run two engines against each other, for example:
+
+```bash
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_engine args=checkpoints/azul_actor.ot proto=uai tc=1+0" \
+           "path=./target/debug/random_engine proto=uai tc=1+0" \
+  --out ./runs/engine-game.azl \
+  --seed 42
+```
+
+To run the beam engine instead, use `rl_beam` and optionally pass the beam
+width and depth after the checkpoint path:
+
+```bash
+cargo run -p interface -- \
+  --engine "path=./target/debug/rl_beam args=checkpoints/azul_actor.ot proto=uai tc=60+2" \
+           "proto=human" \
+  --out ./runs/beam-game.azl \
+  --seed 42
+```
+
+For a direct 1,000-game greedy-versus-beam comparison using the same actor
+checkpoint:
+
+```bash
+cargo run -p rl_beam --bin matchup -- \
+  checkpoints/azul_actor.ot 1000 4 6 checkpoints/azul_critic.ot
+```
+
+Use `cargo run -p interface -- --help` for time controls, diagnostics, engine
+recovery, and resource-limit options.
+
+### Train a new actor
+
+The workspace training executable currently runs the PPO baseline configured
+in [`rl_env/src/main.rs`](rl_env/src/main.rs). Activate the project environment
+first so `tch` can find the local PyTorch/LibTorch installation:
+
+```bash
+source scripts/activate-env.sh
+cargo run -p rl_env
+```
+
+The run collects complete episodes, performs PPO updates, periodically evaluates
+the greedy actor against a frozen reference actor, and writes the final actor
+and critic to:
+
+```text
+checkpoints/azul_actor.ot
+checkpoints/azul_critic.ot
+```
+
+Before starting training, place the completed actor checkpoint used as the
+stable baseline at:
+
+```text
+checkpoints/reference_actor.ot
+```
+
+The training executable loads this file but does not create or overwrite it.
+Keep it unchanged if you want evaluation results to remain comparable across
+runs.
+
+Training diagnostics are written under `runs/azul_ppo`. Install TensorBoard
+once if needed and view them with:
+
+```bash
+python -m pip install tensorboard
+tensorboard --logdir runs
+```
+
+The executable evaluates 16 games against the fixed reference every 10 PPO
+iterations, then runs a final 500-game evaluation after training completes.
+The final evaluation is printed as `final_evaluation` and is the preferred
+win-rate comparison between training runs; it is printed to the terminal and
+is not currently added to TensorBoard. Periodic evaluation results are written
+to TensorBoard under `evaluation/greedy_win_rate` and `evaluation/games`.
+Evaluation is intentionally less frequent than training because it can be
+expensive. To change the training length, periodic evaluation cadence, or
+final evaluation size, edit the values in `rl_env/src/main.rs`. For custom
+applications, call
+`PpoTrainer::set_reference_actor` before `PpoTrainer::train_with_callback`;
+set `evaluation_games` above zero to enable periodic evaluation.
+
+The current executable uses 1,000 rollout transitions, four full-batch PPO
+passes, and `gamma = 0.99`. The actor learning rate defaults to `3e-4` and the
+critic learning rate to `2e-4`. These
+experimental values are defined in [`rl_env/src/main.rs`](rl_env/src/main.rs) and
+[`rl_env/src/ppo.rs`](rl_env/src/ppo.rs).
 
 ### `random_engine`
 
@@ -133,7 +306,7 @@ Run the interface help or executable with:
 
 ```bash
 cargo run -p interface -- --help
-cargo run -p interface -- --engine "path=PATH proto=human tc=60" "path=PATH proto=human tc=60"
+cargo run -p interface -- --engine "proto=human" "proto=human" --out ./runs/manual-game.azl
 ```
 
 The current CLI requires at least two `--engine` configurations. Consult [`interface/README.md`](interface/README.md) for the available configuration fields. Run the random engine with:

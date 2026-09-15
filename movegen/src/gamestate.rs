@@ -92,6 +92,22 @@ pub struct GameState {
     discarded_tiles: usize,
 }
 
+impl Clone for GameState {
+    fn clone(&self) -> Self {
+        Self {
+            active_player: self.active_player,
+            boards: self.boards.clone(),
+            centre_bowl: self.centre_bowl.clone(),
+            factory_bowls: self.factory_bowls.clone(),
+            bag: self.bag.clone(),
+            first_token_owner: self.first_token_owner,
+            rng: self.rng.clone(),
+            seed: self.seed,
+            discarded_tiles: self.discarded_tiles,
+        }
+    }
+}
+
 /// Returns the number of factory bowls required for `players` players.
 ///
 /// Azul uses `2n + 1` factory bowls; the centre is stored separately.
