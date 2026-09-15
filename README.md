@@ -191,7 +191,7 @@ width and depth after the checkpoint path:
 
 ```bash
 cargo run -p interface -- \
-  --engine "path=./target/debug/rl_beam args=checkpoints/reference_actor.ot proto=uai tc=1+0" \
+  --engine "path=./target/debug/rl_beam args=checkpoints/azul_actor.ot proto=uai tc=60+2" \
            "proto=human" \
   --out ./runs/beam-game.azl \
   --seed 42
@@ -202,7 +202,7 @@ checkpoint:
 
 ```bash
 cargo run -p rl_beam --bin matchup -- \
-  checkpoints/reference_actor.ot 1000 4 2
+  checkpoints/azul_actor.ot 1000 4 6 checkpoints/azul_critic.ot
 ```
 
 Use `cargo run -p interface -- --help` for time controls, diagnostics, engine

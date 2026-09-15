@@ -38,7 +38,7 @@ fn main() -> io::Result<()> {
     let depth = parse_argument(arguments.next(), "beam depth", BeamConfig::default().depth)?;
     let critic_checkpoint = arguments
         .next()
-        .unwrap_or_else(|| "checkpoints/reference_critic.ot".to_owned());
+        .unwrap_or_else(|| "checkpoints/azul_critic.ot".to_owned());
     let policy = BeamPolicy::load(
         &checkpoint,
         critic_checkpoint,
